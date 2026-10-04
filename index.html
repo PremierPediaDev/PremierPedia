@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="theme-color" content="#f7f8fc">
+	<title>Stow — Your files, together</title>
+	<style>
+		:root {
+			color-scheme: light;
+			--ink: #20243a;
+			--muted: #777d91;
+			--purple: #6958d9;
+			--purple-dark: #5141bd;
+			--line: #e9eaf1;
+			--surface: #fff;
+		}
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			min-width: 320px;
+			background: #f7f8fc;
+			color: var(--ink);
+			font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			-webkit-font-smoothing: antialiased;
+		}
+		a { color: inherit; text-decoration: none; }
+		button { font: inherit; }
+		.shell { max-width: 1180px; margin: 0 auto; padding: 0 36px; }
+		header { height: 86px; display: flex; align-items: center; justify-content: space-between; }
+		.brand { display: inline-flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 750; letter-spacing: -.7px; }
+		.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: var(--purple); color: white; }
+		.brand-mark svg { width: 19px; }
+		nav { display: flex; align-items: center; gap: 34px; color: #646a7e; font-size: 14px; font-weight: 550; }
+		nav a:hover, .text-link:hover { color: var(--purple); }
+		.nav-actions { display: flex; align-items: center; gap: 19px; font-size: 14px; font-weight: 650; }
+		.button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; border: 0; border-radius: 10px; padding: 12px 19px; background: var(--purple); color: white; font-size: 14px; font-weight: 650; cursor: pointer; transition: background .2s, transform .2s; }
+		.button:hover { background: var(--purple-dark); transform: translateY(-1px); }
+		.button svg { width: 17px; height: 17px; }
+		main { padding: 68px 0 72px; }
+		.hero { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 70px; }
+		.eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--purple); font-size: 12px; font-weight: 750; letter-spacing: 1.35px; text-transform: uppercase; }
+		.eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #8b7cea; }
+		h1 { max-width: 510px; margin: 20px 0 18px; font-size: clamp(43px, 5vw, 62px); line-height: 1.08; letter-spacing: -3.2px; }
+		h1 span { color: var(--purple); }
+		.intro { max-width: 475px; margin: 0; color: var(--muted); font-size: 17px; line-height: 1.75; }
+		.hero-actions { display: flex; align-items: center; gap: 22px; margin-top: 31px; }
+		.text-link { color: #555b70; font-size: 14px; font-weight: 650; }
+		.trust { display: flex; align-items: center; gap: 10px; margin-top: 34px; color: #858a9b; font-size: 12px; }
+		.avatars { display: flex; padding-left: 5px; }
+		.avatar { width: 25px; height: 25px; margin-left: -5px; border: 2px solid #f7f8fc; border-radius: 50%; display: grid; place-items: center; color: white; font-size: 8px; font-weight: 700; }
+		.avatar:nth-child(1) { background: #df9c75; }.avatar:nth-child(2) { background: #7891b7; }.avatar:nth-child(3) { background: #7eaa94; }.avatar:nth-child(4) { background: #a47db7; }
+		.preview-wrap { position: relative; padding: 18px 7px 22px 18px; }
+		.preview-wrap:before { content: ""; position: absolute; top: 0; right: -8px; width: 180px; height: 180px; border-radius: 42px; background: #eeebff; transform: rotate(12deg); }
+		.preview { position: relative; overflow: hidden; padding: 24px; border: 1px solid #ececf3; border-radius: 18px; background: var(--surface); box-shadow: 0 25px 65px rgba(49, 46, 92, .10); }
+		.preview-top { display: flex; align-items: center; justify-content: space-between; padding-bottom: 21px; border-bottom: 1px solid #f0f0f5; }
+		.preview-title { font-size: 14px; font-weight: 700; }
+		.online { display: inline-flex; align-items: center; gap: 6px; color: #858a9b; font-size: 11px; }
+		.online:before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #55bd8a; }
+		.usage { display: flex; align-items: center; gap: 17px; padding: 23px 0 21px; }
+		.ring { width: 62px; height: 62px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--purple) 0 27%, #eeedfa 27% 100%); position: relative; }
+		.ring:before { content: ""; position: absolute; width: 47px; height: 47px; border-radius: 50%; background: white; }
+		.ring svg { z-index: 1; width: 21px; color: var(--purple); }
+		.usage strong { display: block; font-size: 17px; letter-spacing: -.4px; }
+		.usage small { display: block; margin-top: 5px; color: #8a8e9e; font-size: 11px; }
+		.file-heading { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 10px; font-size: 12px; font-weight: 700; }
+		.file-heading a { color: var(--purple); font-size: 11px; font-weight: 600; }
+		.file-row { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-top: 1px solid #f2f2f6; }
+		.file-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; background: #f0efff; color: #6b5cda; }
+		.file-icon.green { background: #e8f6ef; color: #48a778; }
+		.file-icon.orange { background: #fff2e6; color: #d78a3f; }
+		.file-icon svg { width: 17px; height: 17px; }
+		.file-info { min-width: 0; flex: 1; }
+		.file-info strong { display: block; overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+		.file-info small { display: block; margin-top: 4px; color: #9599a7; font-size: 10px; }
+		.file-size { color: #858a9b; font-size: 10px; }
+		.share-badge { position: absolute; right: -17px; bottom: 3px; display: flex; align-items: center; gap: 9px; padding: 12px 15px; border: 1px solid #efeff4; border-radius: 12px; background: white; box-shadow: 0 12px 30px rgba(49, 46, 92, .10); font-size: 11px; font-weight: 650; }
+		.share-icon { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; background: #eff9f4; color: #43a676; }
+		.share-icon svg { width: 15px; }
+		.benefits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 80px; padding-top: 31px; border-top: 1px solid #e8e9f0; }
+		.benefit { display: flex; align-items: flex-start; gap: 13px; }
+		.benefit-icon { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 11px; background: white; color: var(--purple); box-shadow: 0 3px 12px rgba(42, 42, 75, .06); }
+		.benefit-icon svg { width: 19px; height: 19px; }
+		.benefit h2 { margin: 2px 0 5px; font-size: 13px; }
+		.benefit p { margin: 0; color: #858a9b; font-size: 12px; line-height: 1.55; }
+		footer { padding: 20px 0 30px; color: #9296a5; font-size: 11px; }
+		footer .shell { display: flex; justify-content: space-between; gap: 20px; }
+		@media (max-width: 800px) {
+			.shell { padding: 0 24px; }
+			nav { display: none; }
+			main { padding: 46px 0 55px; }
+			.hero { grid-template-columns: 1fr; gap: 40px; }
+			.hero-copy { max-width: 590px; }
+			.preview-wrap { width: min(100%, 510px); justify-self: center; }
+			.benefits { margin-top: 62px; }
+		}
+		@media (max-width: 560px) {
+			.shell { padding: 0 19px; }
+			header { height: 72px; }
+			.nav-actions { gap: 13px; font-size: 13px; }
+			.nav-actions .button { padding: 10px 13px; }
+			main { padding-top: 37px; }
+			h1 { margin-top: 16px; font-size: 45px; letter-spacing: -2.5px; }
+			.intro { font-size: 15px; }
+			.hero-actions { gap: 15px; }
+			.button { padding: 12px 15px; }
+			.preview { padding: 19px; }
+			.share-badge { right: -4px; }
+			.benefits { grid-template-columns: 1fr; gap: 20px; margin-top: 55px; }
+			footer .shell { flex-direction: column; gap: 7px; }
+		}
+		@media (prefers-reduced-motion: reduce) { *, *:before, *:after { scroll-behavior: auto !important; transition: none !important; } }
+	</style>
+</head>
+<body>
+	<header class="shell">
+		<a class="brand" href="#home" aria-label="Stow home">
+			<span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8.5 12 4l8 4.5v8L12 21l-8-4.5v-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m4.5 8.7 7.5 4.2 7.5-4.2M12 13v7.5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+			Stow
+		</a>
+		<nav aria-label="Main navigation">
+			<a href="#features">Features</a>
+			<a href="#security">Security</a>
+			<a href="mailto:hello@stow.example">Help</a>
+		</nav>
+		<div class="nav-actions">
+			<a class="text-link" href="#login">Log in</a>
+			<a class="button" href="#signup">Get started</a>
+		</div>
+	</header>
+
+	<main id="home" class="shell">
+		<section class="hero" aria-labelledby="hero-title">
+			<div class="hero-copy">
+				<div class="eyebrow"><span class="eyebrow-dot"></span> A calmer place for your files</div>
+				<h1 id="hero-title">Everything you need, <span>all in one place.</span></h1>
+				<p class="intro">Keep your files close, share them with ease, and get to what matters from anywhere. Your personal space in the cloud starts here.</p>
+				<div class="hero-actions" id="signup">
+					<a class="button" href="mailto:hello@stow.example?subject=Get%20started%20with%20Stow">Create your account <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+					<a class="text-link" href="#features">Explore features</a>
+				</div>
+				<div class="trust"><span class="avatars" aria-hidden="true"><span class="avatar">AL</span><span class="avatar">JM</span><span class="avatar">SK</span><span class="avatar">+</span></span> A little more room for what matters.</div>
+			</div>
+
+			<div class="preview-wrap" aria-label="Preview of a Stow storage account">
+				<div class="preview">
+					<div class="preview-top"><span class="preview-title">Your space</span><span class="online">All files up to date</span></div>
+					<div class="usage">
+						<div class="ring" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8.5 12 4l8 4.5v8L12 21l-8-4.5v-8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m4.5 8.7 7.5 4.2 7.5-4.2M12 13v7.5" stroke="currentColor" stroke-width="1.7"/></svg></div>
+						<div><strong>2.4 GB <span style="color:#9296a5;font-weight:500">of 10 GB</span></strong><small>Your files, organized and ready</small></div>
+					</div>
+					<div class="file-heading"><span>Recently added</span><a href="#login">View all</a></div>
+					<div class="file-row"><span class="file-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3.8h8l4 4V20H6V3.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 4v4h4M9 13h6m-6 3h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><span class="file-info"><strong>Project notes.pdf</strong><small>Today · Documents</small></span><span class="file-size">2.1 MB</span></div>
+					<div class="file-row"><span class="file-icon green"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><path d="m5 17 5-5 3 3 2-2 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="file-info"><strong>Weekend memories.jpg</strong><small>Yesterday · Photos</small></span><span class="file-size">4.8 MB</span></div>
+					<div class="file-row"><span class="file-icon orange"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="file-info"><strong>Monthly budget.xlsx</strong><small>Jun 12 · Spreadsheets</small></span><span class="file-size">840 KB</span></div>
+				</div>
+				<div class="share-badge"><span class="share-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m-4 4 4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Ready to share</div>
+			</div>
+		</section>
+
+		<section class="benefits" id="features" aria-label="Stow features">
+			<article class="benefit"><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.5 3 7.7 7 10 4-2.3 7-5.5 7-10V6l-7-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h2>Your files stay yours</h2><p>Private storage designed with your peace of mind in focus.</p></div></article>
+			<article class="benefit"><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m-4 4 4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h2>Sharing made simple</h2><p>Send a link and bring the right people into the loop.</p></div></article>
+			<article class="benefit" id="security"><span class="benefit-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><div><h2>Sign in your way</h2><p>Start with an account. SSO sign-in can be added as your needs grow.</p></div></article>
+		</section>
+	</main>
+	<footer><div class="shell"><span>© 2025 Stow. A little space for everything.</span><span>Simple storage, built around you.</span></div></footer>
+</body>
+</html>
