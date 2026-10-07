@@ -1,0 +1,75 @@
+if ($global:DefaultVIServers -ne $null){
+    if ($global:DefaultVIServers.count -lt 2) {
+        "Note: Not connected to all VCenters....proceeding anyways...."
+    } else {
+        Write-Host "`nUser is connected to vc...." -ForegroundColor Green
+        "---------------------------------"
+    }
+} else {
+    "Not connected to a VCenter, use PremierVCConnect.ps1 first to get connected" 
+    Exit
+}
+Clear-Host
+
+$vmNames = Get-content "pingServerList2.txt"
+$servers = @()
+
+"`n`nSearching for VMs..."
+
+ForEach ( $vmName in $vmNames ) {
+   Write-Host "Running for $vmname"
+
+   $vmDetails = [PSCustomObject]@{
+       Found   = $false
+       Name    = $vmName
+       vCenter = "---"
+       OS      = "---"
+       Status  = "Not Found"
+       Power   = "---"
+       vCAbbr = ""
+   }
+
+
+    $findVM = Get-VM -name $vmName -EA SilentlyContinue
+    
+    if ($findVM) {
+        
+        $vmDetails.Found = $true
+        $vmDetails.Power = $findVM.PowerState
+
+        if($findVM.Folder.Name -eq "Decommission") {
+            $vmDetails.Status = "Pending Decom"
+        } else {
+            $vmDetails.Status = "Installed"
+        }
+
+        $vmDetails.OS = $findVM.Guest.GuestId
+        $vmDetails.vCenter = $findVM.Uid.Split("@")[1].Split(":")[0]        
+        $vmDetails.vCAbbr = if ($vmDetails.vCenter.Split("v")[1] -ne "center1") {$vmDetails.vCenter} else {$vmDetails.vCenter.Split("v")[0]}
+        $vmDetails.vCenter = $vmDetails.vCAbbr
+    }
+        
+    $servers += $vmDetails;  
+}
+Clear-Host
+
+$format = "{0,-20} {1,-15} {2,-25} {3,-15} {4,-15}"
+
+Write-Host ($format -f "Name", "vCenter", "Operating System", "Status", "Power")
+Write-Host ($format -f "---------------", "-------------", "-------------------","--------------","------------")
+
+$servers | ForEach-Object {
+    $line = $format -f $_.Name, $_.vCenter, $_.OS, $_.Status, $_.Power
+
+    switch ($_.Status) {
+        "Installed" {
+            $color = if ($_.Power -eq "PoweredOff") { "Red" } else { "Green" }
+        }
+        "Pending Decom" {
+            $color = if ($_.Power -eq "PoweredOn") { "DarkGreen" } else { "Yellow" }
+        }
+        "Not Found" { $color = "Gray" }
+    }
+
+    Write-Host $line -ForegroundColor $color    
+}        
