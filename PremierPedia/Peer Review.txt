@@ -1,0 +1,21 @@
+KB0010917 -L2, have to fill the below details and paste it in additional comments in Service now ticket.. 
+
+Windows Server Peer Review Checklist	YES/NO/NA
+
+Server is in correct vCenter Folder?	 
+Disk in Vmware are set to the correct type?	 
+VMTools is up-to-date?	 
+Windows is Activated?	 
+Administrators group has all listed from ticket?	 
+Disks are sized/setup/lettered correctly?	 
+Add corp.premierinc.com & premierinc.com to DNS Suffix	 
+Post Provisioning Script has been ran?	 
+DVD Drive - Change to Z:?	 
+Netbackup Installed (If Prod)	 
+Paging (P:) set?	 
+Windows Firewall turned off?	 
+Change Request entered and number recorded in work notes of ticket?	 
+Is SentinalOne Installed?	 
+Mention server OU path	 
+Set the network adapter name for the server(prod / nonprod) 	 
+Power Plan set to high performance	 
