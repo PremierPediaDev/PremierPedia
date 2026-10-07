@@ -269,6 +269,12 @@ button {
   color: var(--primary);
 }
 
+.file-download {
+  margin-left: 12px;
+  color: var(--primary);
+  font-size: 0.8rem;
+}
+
 .item-location {
   margin: 3px 0 0 46px;
   color: var(--muted);

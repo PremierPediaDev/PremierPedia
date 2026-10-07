@@ -61,8 +61,10 @@ function bindEvents() {
       return;
     }
 
-    const fileButton = event.target.closest("[data-file-url]");
-    if (fileButton) window.open(fileButton.dataset.fileUrl, "_blank", "noopener,noreferrer");
+    const fileButton = event.target.closest("[data-file-path]");
+    if (fileButton) {
+      window.open(getFileUrl(fileButton.dataset.filePath), "_blank", "noopener,noreferrer");
+    }
   });
 
   ui.breadcrumbs.addEventListener("click", (event) => {
@@ -157,8 +159,17 @@ function renderRows(items) {
     nameButton.className = "name-button";
     nameButton.innerHTML = `${item.kind === "folder" ? folderIcon() : fileIcon()}<span>${escapeHtml(item.name)}</span>`;
     if (item.kind === "folder") nameButton.dataset.folderPath = item.relativePath;
-    else nameButton.dataset.fileUrl = item.htmlUrl;
+    else nameButton.dataset.filePath = item.relativePath;
     nameCell.append(nameButton);
+    if (item.kind === "file") {
+      const downloadLink = document.createElement("a");
+      downloadLink.className = "file-download";
+      downloadLink.href = getFileUrl(item.relativePath);
+      downloadLink.download = item.name;
+      downloadLink.textContent = "Download";
+      downloadLink.setAttribute("aria-label", `Download ${item.name}`);
+      nameCell.append(downloadLink);
+    }
     if (state.searchTerm && item.kind === "file") {
       const location = document.createElement("div");
       location.className = "item-location";
@@ -200,21 +211,39 @@ function toggleSelectAll(event) {
 }
 
 async function handleUpload(event) {
-  const [file] = event.target.files;
-  if (!file) return;
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
 
+  const uploadFolder = state.currentFolder;
+  const failures = [];
+  ui.upload.disabled = true;
+  ui.fileInput.value = "";
   try {
-    const relativePath = [state.currentFolder, file.name].filter(Boolean).join("/");
-    await apiRequest("/api/docs/files", {
-      method: "PUT",
-      body: JSON.stringify({ path: relativePath, contentBase64: await fileToBase64(file) })
-    });
+    for (const file of files) {
+      const relativePath = [uploadFolder, file.name].filter(Boolean).join("/");
+      try {
+        await apiRequest("/api/docs/files", {
+          method: "PUT",
+          body: JSON.stringify({ path: relativePath, contentBase64: await fileToBase64(file) })
+        });
+      } catch (error) {
+        console.error(error);
+        failures.push({ file, error });
+      }
+    }
+
+    state.currentFolder = uploadFolder;
+    await refreshRepository({ preserveFolder: true });
+    const uploadedCount = files.length - failures.length;
+    if (failures.length) {
+      const failedNames = failures.map(({ file }) => file.name).join(", ");
+      showToast(`Uploaded ${uploadedCount} of ${files.length} files. Failed: ${failedNames}. ${failures[0].error.message}`);
+    } else {
+      showToast(`Uploaded ${uploadedCount} file${uploadedCount === 1 ? "" : "s"}.`);
+    }
+  } finally {
     ui.fileInput.value = "";
-    await refreshRepository();
-    showToast(`Uploaded ${file.name}.`);
-  } catch (error) {
-    console.error(error);
-    showToast(error.message);
+    ui.upload.disabled = false;
   }
 }
 
@@ -272,6 +301,10 @@ function fileToBase64(file) {
     reader.onerror = () => reject(reader.error || new Error("Unable to read the selected file."));
     reader.readAsDataURL(file);
   });
+}
+
+function getFileUrl(relativePath) {
+  return `/api/docs/file?path=${encodeURIComponent(relativePath)}`;
 }
 
 function folderIcon() {

@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT || 3000);
 const [environmentOwner, environmentRepository] = (process.env.GITHUB_REPOSITORY || "").split("/");
 const OWNER = process.env.GITHUB_OWNER || environmentOwner || "PremierPediaDev";
 const REPOSITORY = process.env.GITHUB_REPO_NAME || environmentRepository || process.env.GITHUB_REPOSITORY || "PremierPedia";
-const DOCS_PATH = normalizeDocsPath(process.env.GITHUB_DOCS_PATH || "docs");
+const DOCS_PATH = normalizeDocsPath(process.env.GITHUB_DOCS_PATH || "PremierPedia");
 const ROOT = __dirname;
 const API_BASE = "https://api.github.com";
 const githubHeaders = {
@@ -42,12 +42,49 @@ app.get("/api/docs", async (_request, response, next) => {
       throw new HttpError(502, "GitHub returned an incomplete repository tree.");
     }
 
-    const items = buildItemsFromTree(treeData.tree || [], DOCS_PATH, {
-      owner: OWNER,
-      repository: REPOSITORY,
-      branch
-    });
+    const items = buildItemsFromTree(treeData.tree || [], DOCS_PATH);
     response.json({ docsPath: DOCS_PATH, branch, items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/docs/file", async (request, response, next) => {
+  try {
+    let relativePath;
+    try {
+      relativePath = validateRelativePath(request.query.path);
+    } catch (error) {
+      throw new HttpError(400, error.message);
+    }
+    const fullPath = `${DOCS_PATH}/${relativePath}`;
+    const branch = await getBranch();
+    let file = await githubRequest(
+      `/repos/${OWNER}/${REPOSITORY}/contents/${encodeGithubPath(fullPath)}?ref=${encodeURIComponent(branch)}`
+    );
+    if (file.type !== "file") throw new HttpError(404, "The requested document was not found.");
+
+    if (file.encoding !== "base64" || typeof file.content !== "string") {
+      if (typeof file.sha !== "string") {
+        throw new HttpError(502, "GitHub did not return a downloadable file.");
+      }
+      file = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/blobs/${encodeURIComponent(file.sha)}`);
+    }
+    if (file.encoding !== "base64" || typeof file.content !== "string") {
+      throw new HttpError(502, "GitHub did not return a downloadable file.");
+    }
+
+    const content = Buffer.from(file.content.replace(/\s/g, ""), "base64");
+    const contentType = getInlineContentType(relativePath);
+    const filename = encodeURIComponent(relativePath.split("/").at(-1)).replace(/['()*]/g, (character) =>
+      `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+    );
+    response
+      .set("Content-Type", contentType || "application/octet-stream")
+      .set("Content-Disposition", `${contentType ? "inline" : "attachment"}; filename*=UTF-8''${filename}`)
+      .set("X-Content-Type-Options", "nosniff")
+      .set("Cache-Control", "private, no-store")
+      .send(content);
   } catch (error) {
     next(error);
   }
@@ -235,6 +272,35 @@ function encodeGithubPath(value) {
   return value.split("/").map(encodeURIComponent).join("/");
 }
 
+function getInlineContentType(filePath) {
+  const extension = filePath.split("/").at(-1).split(".").at(-1).toLowerCase();
+  const contentTypes = {
+    txt: "text/plain; charset=utf-8",
+    text: "text/plain; charset=utf-8",
+    log: "text/plain; charset=utf-8",
+    md: "text/plain; charset=utf-8",
+    csv: "text/csv; charset=utf-8",
+    json: "application/json; charset=utf-8",
+    xml: "application/xml; charset=utf-8",
+    pdf: "application/pdf",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    avif: "image/avif",
+    bmp: "image/bmp",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    m4a: "audio/mp4",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime"
+  };
+  return contentTypes[extension] || null;
+}
+
 function isBase64(value) {
   return value.length % 4 === 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
 }
@@ -252,4 +318,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, DOCS_PATH, normalizeDocsPath };
+module.exports = { app, DOCS_PATH, getInlineContentType, normalizeDocsPath };
