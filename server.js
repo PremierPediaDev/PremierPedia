@@ -14,6 +14,8 @@ const REPOSITORY = process.env.GITHUB_REPO_NAME || environmentRepository || proc
 const DOCS_PATH = normalizeDocsPath(process.env.GITHUB_DOCS_PATH || "PremierPedia");
 const ROOT = __dirname;
 const API_BASE = "https://api.github.com";
+const uploadedOnCache = new Map();
+const uploadedOnRequests = new Map();
 const githubHeaders = {
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
@@ -43,6 +45,12 @@ app.get("/api/docs", async (_request, response, next) => {
     }
 
     const items = buildItemsFromTree(treeData.tree || [], DOCS_PATH);
+    const files = items.filter((item) => item.kind === "file");
+    for (let index = 0; index < files.length; index += 8) {
+      await Promise.all(files.slice(index, index + 8).map(async (item) => {
+        item.uploadedOn = await getUploadedOn(item.path, branch);
+      }));
+    }
     response.json({ docsPath: DOCS_PATH, branch, items });
   } catch (error) {
     next(error);
@@ -118,6 +126,7 @@ app.put("/api/docs/files", requireGithubToken, async (request, response, next) =
         ...(existingSha ? { sha: existingSha } : {})
       }
     });
+    uploadedOnCache.delete(`${branch}:${fullPath}`);
     response.json({ path: relativePath, sha: result.content?.sha, commit: result.commit?.sha });
   } catch (error) {
     next(error);
@@ -201,6 +210,7 @@ app.delete("/api/docs/files", requireGithubToken, async (request, response, next
           branch
         }
       });
+      uploadedOnCache.delete(`${branch}:${file.path}`);
     }
     response.json({ deletedCount: filesToDelete.length });
   } catch (error) {
@@ -242,6 +252,38 @@ async function getBranch() {
   if (process.env.GITHUB_BRANCH) return process.env.GITHUB_BRANCH;
   const repository = await githubRequest(`/repos/${OWNER}/${REPOSITORY}`);
   return repository.default_branch;
+}
+
+async function getUploadedOn(path, branch) {
+  const cacheKey = `${branch}:${path}`;
+  if (uploadedOnCache.has(cacheKey)) return uploadedOnCache.get(cacheKey);
+  if (uploadedOnRequests.has(cacheKey)) return uploadedOnRequests.get(cacheKey);
+
+  const request = (async () => {
+    const query = new URLSearchParams({ path, sha: branch, per_page: "1" });
+    let commits = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/commits?${query}`);
+    if (commits.length === 0) {
+      query.delete("sha");
+      commits = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/commits?${query}`);
+    }
+    const uploadedOn = getCommitDate(commits[0]);
+    uploadedOnCache.set(cacheKey, uploadedOn);
+    return uploadedOn;
+  })();
+  uploadedOnRequests.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    uploadedOnRequests.delete(cacheKey);
+  }
+}
+
+function getCommitDate(commit) {
+  return commit?.commit?.committer?.date ||
+    commit?.commit?.author?.date ||
+    commit?.committer?.date ||
+    commit?.author?.date ||
+    null;
 }
 
 async function githubRequest(endpoint, options = {}) {
@@ -318,4 +360,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, DOCS_PATH, getInlineContentType, normalizeDocsPath };
+module.exports = { app, DOCS_PATH, getCommitDate, getInlineContentType, normalizeDocsPath };

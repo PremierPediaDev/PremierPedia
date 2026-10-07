@@ -4,7 +4,56 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const { once } = require("node:events");
-const { app, DOCS_PATH } = require("../server");
+const { app, DOCS_PATH, getCommitDate } = require("../server");
+
+test("document listing includes each file's latest commit timestamp", async (context) => {
+  const originalFetch = global.fetch;
+  const requestedCommitQueries = [];
+  global.fetch = async (url) => {
+    const requestUrl = new URL(url);
+    if (requestUrl.pathname === "/repos/PremierPediaDev/PremierPedia") {
+      return new Response(JSON.stringify({ default_branch: "main" }));
+    }
+    if (requestUrl.pathname === "/repos/PremierPediaDev/PremierPedia/git/trees/main") {
+      return new Response(JSON.stringify({
+        tree: [{ path: `${DOCS_PATH}/guide.txt`, type: "blob", size: 14, sha: "guide-sha" }]
+      }));
+    }
+    if (requestUrl.pathname === "/repos/PremierPediaDev/PremierPedia/commits") {
+      requestedCommitQueries.push(requestUrl.searchParams);
+      return new Response(JSON.stringify([{
+        commit: { committer: { date: "2024-03-09T15:07:05Z" } }
+      }]));
+    }
+    throw new Error(`Unexpected GitHub API request: ${url}`);
+  };
+
+  const server = app.listen(0);
+  await once(server, "listening");
+  context.after(async () => {
+    global.fetch = originalFetch;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  const response = await get(`http://127.0.0.1:${server.address().port}/api/docs`);
+  assert.equal(response.status, 200);
+  const payload = JSON.parse(response.body);
+  assert.equal(payload.items.find((item) => item.kind === "file").uploadedOn, "2024-03-09T15:07:05Z");
+  assert.equal(requestedCommitQueries.length, 1);
+  assert.equal(requestedCommitQueries[0].get("path"), `${DOCS_PATH}/guide.txt`);
+  assert.equal(requestedCommitQueries[0].get("sha"), "main");
+  assert.equal(requestedCommitQueries[0].get("per_page"), "1");
+});
+
+test("commit timestamp supports nested and top-level GitHub commit payloads", () => {
+  assert.equal(getCommitDate({
+    commit: { committer: { date: "2024-03-09T15:07:05Z" } }
+  }), "2024-03-09T15:07:05Z");
+  assert.equal(getCommitDate({
+    author: { date: "2024-03-09T15:07:05Z" }
+  }), "2024-03-09T15:07:05Z");
+  assert.equal(getCommitDate({}), null);
+});
 
 test("file endpoint serves supported documents inline and other formats as downloads", async (context) => {
   const originalFetch = global.fetch;

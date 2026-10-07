@@ -13,31 +13,79 @@
         <div class="brand" aria-label="PremierPedia">
           <span class="brand-wordmark">PremierPedia</span>
         </div>
+        <button id="demoSignInButton" class="button button-secondary" type="button" aria-pressed="false">Demo Admin Sign In</button>
       </div>
     </header>
 
     <main class="shell">
       <section class="browser" aria-label="Documentation browser">
         <div class="toolbar">
-          <div class="search-wrap">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M10.4 3.7a6.7 6.7 0 1 1 0 13.4 6.7 6.7 0 0 1 0-13.4Zm0 0 9.1 9.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <input id="searchInput" class="search-input" type="search" placeholder="Search files recursively" aria-label="Search files recursively" />
+          <div class="search-tools">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="2"/>
+                <path d="m15.5 15.5 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <input id="searchInput" class="search-input" type="search" placeholder="Search files recursively" aria-label="Search files recursively" />
+            </div>
+            <button id="refreshButton" class="button button-secondary icon-button" type="button" aria-label="Refresh documents" title="Refresh documents">
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M20 7v5h-5M4.9 9a7.5 7.5 0 0 1 13-2L20 12M4 17v-5h5m10.1 3a7.5 7.5 0 0 1-13 2L4 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
 
           <div class="toolbar-actions">
-            <button id="refreshButton" class="button button-secondary" type="button">Refresh</button>
-            <button id="createFolderButton" class="button button-secondary" type="button">New folder</button>
-            <button id="uploadButton" class="button" type="button">Upload</button>
-            <button id="removeButton" class="button button-secondary danger" type="button">Remove selected</button>
+            <button id="createFolderButton" class="button button-secondary" type="button" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9ZM12 10v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>New Directory</span>
+            </button>
+            <button id="uploadButton" class="button" type="button" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Upload Files</span>
+            </button>
+            <button id="removeButton" class="button button-secondary danger" type="button" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M4.5 7h15M9 7V4.5h6V7m2.5 0-.8 13h-9.4L6.5 7m3.5 3v6m4-6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Delete</span>
+            </button>
             <input id="fileInput" type="file" multiple hidden />
           </div>
         </div>
 
         <div class="meta-row">
           <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"></nav>
-          <span id="itemCount" class="item-count"></span>
+          <div class="meta-controls">
+            <label class="filter-control">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M4 5h16l-6.2 7.2v5.1l-3.6 1.8v-6.9L4 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              </svg>
+              <select id="fileFilter" aria-label="Filter files">
+                <option value="folder">-- None --</option>
+                <option value="all">All files</option>
+              </select>
+            </label>
+            <label class="filter-control">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M7 19V5m0 0L4 8m3-3 3 3M17 5v14m0 0-3-3m3 3 3-3m-8-8h2m-2 4h2m-2 4h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <select id="fileSort" aria-label="Sort files">
+                <option value="name-asc">Name (A–Z)</option>
+                <option value="name-desc">Name (Z–A)</option>
+                <option value="type-asc">Type</option>
+                <option value="size-asc">Size (smallest)</option>
+                <option value="size-desc">Size (largest)</option>
+                <option value="uploadedOn-desc">Uploaded On (newest)</option>
+                <option value="uploadedOn-asc">Uploaded On (oldest)</option>
+              </select>
+            </label>
+            <span id="itemCount" class="item-count"></span>
+          </div>
         </div>
 
         <div class="table-wrap">
@@ -48,7 +96,8 @@
                 <th>Name</th>
                 <th>Type</th>
                 <th>Size</th>
-                <th>Modified</th>
+                <th>Uploaded On</th>
+                <th class="action-column"><span class="visually-hidden">Actions</span></th>
               </tr>
             </thead>
             <tbody id="fileRows"></tbody>
@@ -63,6 +112,17 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <aside id="activityPanel" class="activity-panel" aria-live="polite" hidden>
+      <div class="activity-header">
+        <div>
+          <h2 id="activityTitle" class="activity-title"></h2>
+          <p id="activitySummary" class="activity-summary"></p>
+        </div>
+        <button id="activityClose" class="activity-close" type="button" aria-label="Close upload status">×</button>
+      </div>
+      <div id="activityItems" class="activity-items"></div>
+    </aside>
 
     <script src="index.js" defer></script>
   </body>

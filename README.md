@@ -18,6 +18,8 @@ cp .env.example .env
 
 Set `GITHUB_TOKEN` in `.env` for write operations. The default repository settings are `PremierPediaDev/PremierPedia` and `PremierPedia/`; they can be overridden with `GITHUB_OWNER`, `GITHUB_REPO_NAME`, and `GITHUB_DOCS_PATH`. `GITHUB_BRANCH` is optional and defaults to the repository's default branch. Keep `.env` private; it is ignored by Git.
 
+The browser can search recursively, filter by file type, sort by name, type, size, or latest commit date, and download individual files. **Demo Admin Sign In** previews the admin controls and upload progress UI. This is a client-side demo toggle, not authentication; write requests still require the server-side `GITHUB_TOKEN`.
+
 ## Start
 
 ```sh
@@ -33,7 +35,7 @@ npm run dev
 ## API
 
 - `GET /api/health` — server health
-- `GET /api/docs` — recursively lists files and derives nested folders from the Git tree; an absent or empty `PremierPedia/` tree returns `{ "items": [] }`
+- `GET /api/docs` — recursively lists files, derives nested folders from the Git tree, and includes each file's latest commit date; an absent or empty `PremierPedia/` tree returns `{ "items": [] }`
 - `GET /api/docs/file?path=relative/path` — serves browser-supported file types inline and downloads other types
 - `POST /api/docs/folders` — creates a folder. JSON body: `{ "path": "optional/parent/new-folder" }`
 - `PUT /api/docs/files` — creates or replaces a file. JSON body: `{ "path": "optional/subfolder/name.ext", "contentBase64": "..." }`
