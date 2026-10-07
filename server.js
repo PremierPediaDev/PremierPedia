@@ -87,6 +87,47 @@ app.put("/api/docs/files", requireGithubToken, async (request, response, next) =
   }
 });
 
+app.post("/api/docs/folders", requireGithubToken, async (request, response, next) => {
+  try {
+    const relativePath = validateRelativePath(request.body?.path);
+    const branch = await getBranch();
+    const treeData = await githubRequest(
+      `/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    if (treeData.truncated) {
+      throw new HttpError(502, "GitHub returned an incomplete repository tree.");
+    }
+
+    const targetPath = `${DOCS_PATH}/${relativePath}`;
+    const tree = treeData.tree || [];
+    if (tree.some((entry) =>
+      entry.path === targetPath || entry.path.startsWith(`${targetPath}/`)
+    )) {
+      throw new HttpError(409, "A file or folder already exists at that path.");
+    }
+
+    const segments = relativePath.split("/");
+    const parentPaths = segments.slice(0, -1).map((_segment, index) =>
+      `${DOCS_PATH}/${segments.slice(0, index + 1).join("/")}`
+    );
+    if (tree.some((entry) => entry.type === "blob" && parentPaths.includes(entry.path))) {
+      throw new HttpError(409, "A file exists where a parent folder is required.");
+    }
+
+    await githubRequest(`/repos/${OWNER}/${REPOSITORY}/contents/${encodeGithubPath(`${targetPath}/.gitkeep`)}`, {
+      method: "PUT",
+      body: {
+        message: `Create folder ${relativePath}`,
+        content: "",
+        branch
+      }
+    });
+    response.status(201).json({ path: relativePath });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/docs/files", requireGithubToken, async (request, response, next) => {
   try {
     const requestedPaths = request.body?.paths;

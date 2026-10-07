@@ -14,6 +14,7 @@ const ui = {
   breadcrumbs: document.getElementById("breadcrumbs"),
   itemCount: document.getElementById("itemCount"),
   refresh: document.getElementById("refreshButton"),
+  createFolder: document.getElementById("createFolderButton"),
   upload: document.getElementById("uploadButton"),
   remove: document.getElementById("removeButton"),
   fileInput: document.getElementById("fileInput"),
@@ -36,6 +37,7 @@ function bindEvents() {
     render();
   });
   ui.refresh.addEventListener("click", refreshRepository);
+  ui.createFolder.addEventListener("click", handleCreateFolder);
   ui.upload.addEventListener("click", () => ui.fileInput.click());
   ui.fileInput.addEventListener("change", handleUpload);
   ui.remove.addEventListener("click", handleRemoveSelected);
@@ -72,14 +74,14 @@ function bindEvents() {
   });
 }
 
-async function refreshRepository() {
+async function refreshRepository({ preserveFolder = false } = {}) {
   ui.refresh.disabled = true;
   ui.emptyMessage.textContent = "Loading documents...";
   try {
     const response = await apiRequest("/api/docs");
     state.docsPath = response.docsPath;
     state.items = response.items;
-    state.currentFolder = "";
+    if (!preserveFolder) state.currentFolder = "";
     state.selected.clear();
     render();
     hideToast();
@@ -143,8 +145,8 @@ function renderRows(items) {
     const checkboxCell = document.createElement("td");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.dataset.path = item.path;
-    checkbox.checked = state.selected.has(item.path);
+    checkbox.dataset.path = item.relativePath;
+    checkbox.checked = state.selected.has(item.relativePath);
     checkbox.setAttribute("aria-label", `Select ${item.name}`);
     checkboxCell.append(checkbox);
 
@@ -183,7 +185,7 @@ function renderRows(items) {
 }
 
 function renderSelectionState(items = getVisibleItems()) {
-  const selectedCount = items.filter((item) => state.selected.has(item.path)).length;
+  const selectedCount = items.filter((item) => state.selected.has(item.relativePath)).length;
   ui.selectAll.checked = items.length > 0 && selectedCount === items.length;
   ui.selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
   ui.remove.disabled = state.selected.size === 0;
@@ -191,8 +193,8 @@ function renderSelectionState(items = getVisibleItems()) {
 
 function toggleSelectAll(event) {
   for (const item of getVisibleItems()) {
-    if (event.target.checked) state.selected.add(item.path);
-    else state.selected.delete(item.path);
+    if (event.target.checked) state.selected.add(item.relativePath);
+    else state.selected.delete(item.relativePath);
   }
   render();
 }
@@ -210,6 +212,24 @@ async function handleUpload(event) {
     ui.fileInput.value = "";
     await refreshRepository();
     showToast(`Uploaded ${file.name}.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message);
+  }
+}
+
+async function handleCreateFolder() {
+  const name = window.prompt("Folder name");
+  if (name === null || !name.trim()) return;
+
+  const path = [state.currentFolder, name.trim()].filter(Boolean).join("/");
+  try {
+    await apiRequest("/api/docs/folders", {
+      method: "POST",
+      body: JSON.stringify({ path })
+    });
+    await refreshRepository({ preserveFolder: true });
+    showToast(`Created folder ${name.trim()}.`);
   } catch (error) {
     console.error(error);
     showToast(error.message);

@@ -28,6 +28,19 @@ test("recursive tree entries produce parent folders and file metadata", () => {
   assert.equal(items.find((item) => item.name === "guide.txt").parentPath, "Policies/Nested");
 });
 
+test("gitkeep markers create folders without appearing as files", () => {
+  const items = buildItemsFromTree([
+    { path: "docs/Empty/.gitkeep", type: "blob", size: 0, sha: "marker-sha" },
+    { path: "docs/Visible/.gitkeep-not", type: "blob", size: 1, sha: "file-sha" }
+  ], "docs", { owner: "PremierPediaDev", repository: "PremierPedia", branch: "main" });
+
+  assert.deepEqual(items.map(({ relativePath, kind }) => [relativePath, kind]), [
+    ["Empty", "folder"],
+    ["Visible", "folder"],
+    ["Visible/.gitkeep-not", "file"]
+  ]);
+});
+
 test("file type labels and safe relative-path validation work", () => {
   assert.equal(getTypeLabel("docs/file.PDF"), "PDF");
   assert.equal(getTypeLabel("docs/no-extension"), "FILE");

@@ -2,7 +2,7 @@
 
 PremierPedia is a small GitHub-backed document browser. Its server reads the configured repository's `docs/` tree through the GitHub REST API and performs uploads, replacements, and removals through that same API. The browser never receives the GitHub token.
 
-The GitHub repository is the source of truth. Git does not store empty directories, so a repository with no files under `docs/` is returned as an empty listing; uploading the first document creates the path through the normal GitHub contents API. No example documents or placeholder files are required.
+The GitHub repository is the source of truth. Git does not store empty directories, so newly created empty folders are represented by a hidden `.gitkeep` marker. Uploading the first document creates the path through the normal GitHub contents API.
 
 ## Requirements
 
@@ -34,6 +34,7 @@ npm run dev
 
 - `GET /api/health` — server health
 - `GET /api/docs` — recursively lists files and derives nested folders from the Git tree; an absent or empty `docs/` tree returns `{ "items": [] }`
+- `POST /api/docs/folders` — creates a folder. JSON body: `{ "path": "optional/parent/new-folder" }`
 - `PUT /api/docs/files` — creates or replaces a file. JSON body: `{ "path": "optional/subfolder/name.ext", "contentBase64": "..." }`
 - `DELETE /api/docs/files` — removes selected files or every file below selected folders. JSON body: `{ "paths": ["name.ext", "folder"] }`
 
