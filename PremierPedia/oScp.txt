@@ -1,0 +1,40 @@
+$vmNames = Get-content "pingServerList.txt"
+
+$sPs = @(
+    ".\Find-VM.ps1",
+    ".\GetServerADGroups.ps1",
+    ".\LastBackup.ps1"
+)
+
+foreach ($vmName in $vmNames) {
+    Clear-Host
+    foreach ($sP in $sPs) {
+    Write-Host "PS C:\Scripts> $sP $vmName"
+        & $sP $vmName
+    }
+    $Host.UI.ReadLine()
+}
+
+
+
+___________________
+$vmNames = Get-content "pingServerList.txt"
+
+$sPs = @(
+    ".\Find-VM.ps1",
+    ".\GetServerADGroups.ps1",
+    ".\LastBackup.ps1"
+)
+foreach ($vmName in $vmNames) {
+    Clear-Host
+    #$op = ""
+    #Start-Transcript -Path "$env:TEMP\ScriptOutput1.txt" -Append -Force -IncludeInvocationHeader:$false
+    foreach ($sP in $sPs) {
+        Write-Host "`nPS C:\Scripts> $sP $vmName"
+        & $sP $vmName
+    }
+    #Stop-Transcript
+    #$op = Get-Content "$env:TEMP\ScriptOutput1.txt" -Raw
+    #$op | Set-Clipboard
+    $Host.UI.ReadLine()
+}
