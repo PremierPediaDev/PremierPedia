@@ -1,0 +1,9 @@
+$vmNames = Get-content "pingServerList2.txt"
+
+Clear-Host
+
+foreach ($vmName in $vmNames) {
+    Write-Host "PS C:\Scripts> $sP $vmName"
+    & .\checkWin.ps1 $vmName
+    Write-Host "----"
+}
