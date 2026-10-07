@@ -1,0 +1,123 @@
+if ($global:DefaultVIServers -ne $null){
+    if ($global:DefaultVIServers.count -lt 2) {
+        "Note: Not connected to all VCenters....proceeding anyways...."
+    } else {
+        Write-Host "`nUser is connected to vc...." -ForegroundColor Green
+        "---------------------------------"
+    }
+} else {
+    "Not connected to a VCenter, use PremierVCConnect.ps1 first to get connected" 
+    Exit
+}
+Clear-Host
+
+
+#Set input file path here.
+$vmNames = Get-content "D:\Bharath\ServerList_Bharath.txt"
+
+
+
+$servers = @()
+
+"`n`nGathering VM Stats..."
+ForEach ( $vmName in $vmNames ) {
+   Write-Host "Running for $vmname"
+
+   #Defining properties we need for each server with defaults.
+   $vmDetails = [PSCustomObject]@{
+       Name    = $vmName
+       vCenter = "---"
+       OS      = "---"       
+       Power   = "---"
+       Status  = "Not Found"
+       VMHost  = "---"
+       Domain  = "---"
+       FQDN    = "---"
+   }
+
+
+    $findVM = Get-VM -name $vmName -EA SilentlyContinue
+    
+    if ($findVM) {
+
+        $vmDetails.vCenter = $findVM.Uid.Split("@")[1].Split(":")[0]               
+        #$vmDetails.vCenter = if ($vmDetails.vCenter.Split("v")[1] -ne "center1") { $vmDetails.vCenter } else { if ($vmDetails.vCenter.Split("v")[0] -ieq "c3pi") { "---C3PI" } else { $vmDetails.vCenter.Split("v")[0] } }
+        
+        $vmDetails.OS = $findVM.Guest.ConfiguredGuestId
+        $vmDetails.Power = $findVM.PowerState
+
+        if($findVM.Folder.Name -eq "Decommission") {
+            $vmDetails.Status = "Pending Decom"
+        } else {
+            $vmDetails.Status = "Installed"
+        }
+                
+        $vmDetails.VMHost = $findVM.VMHost.Name.Split(".")[0]
+        
+        $vmDetails.FQDN = $FindVM.Guest.HostName
+
+        if($vmDetails.FQDN -eq $vmName) {
+            $vmDetails.FQDN = (Resolve-DnsName $vmName -EA SilentlyContinue).Name
+        }
+
+        $isFQDN = "$vmName.premierinc.com"
+        $alternateDomains = @("member.premierinc.com", "memberidm.premierinc.com")
+
+        if (-not $vmDetails.FQDN -or $vmDetails.FQDN -eq $isFQDN) {
+            foreach ($domain in $alternateDomains) {
+                $checkActualFQDN = "$vmName.$domain"
+                $resolved = (Resolve-DnsName $checkActualFQDN -EA SilentlyContinue).Name
+                if ($resolved) {
+                    $vmDetails.FQDN = $resolved
+                    break
+                }
+            }
+        }
+
+        $vmDetails.Domain = $vmDetails.FQDN.Split(".")[1]
+
+    }
+        
+    $servers += $vmDetails;  
+}
+Clear-Host
+
+$format = "{0,-20} {1,-15} {2,-28} {3,-15} {4,-15} {5,-15} {6,-15} {7,-35}"
+
+Write-Host ($format -f "Name", "vCenter", "Operating System", "Power", "Status", "VM Host", "Domain", "FQDN")
+Write-Host ($format -f "---------------", "-------------", "---------------------------","--------------","--------------","------------","------------","---------------------------------------")
+
+$servers | ForEach-Object {
+    $line = $format -f $_.Name, $_.vCenter, $_.OS, $_.Power, $_.Status, $_.VMHost, $_.Domain, $_.FQDN
+    
+    $color = "Gray"
+
+    if ($_.Status -eq "Installed") {
+         $color = if ($_.Power -eq "PoweredOff") { "Red" } else { "Green" }
+    }  elseif ($_.Status -eq "Pending Decom") {
+        $color = if ($_.Power -ne "PoweredOff") { "Yellow" } else { "DarkYellow" }
+    }
+
+    Write-Host $line -ForegroundColor $color    
+}
+
+$timestamp = Get-Date -Format "MMM-dd-yyyy_HH-mm-ss"
+$username = (whoami).Split('\')[1]
+
+$folderPath = "D:\Bharath\ServerStatus Exports\$username"
+
+
+if (-not (Test-Path -Path $folderPath)) {
+    New-Item -Path $folderPath -ItemType Directory | Out-Null
+}
+
+$exportPath = "$folderPath\ServerStats_$timestamp.csv"
+$servers | Select-Object Name, vCenter, OS, Status, Power, Domain, FQDN | Export-Csv -Path $exportPath -NoTypeInformation
+Write-Host "`nExported to: $exportPath"
+
+<#Additional Options
+
+InstallDate
+$findVM.CustomFields["Install_Date"]
+$findVM.CreateDate
+#>
