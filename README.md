@@ -1,47 +1,46 @@
 # PremierPedia
 
-PremierPedia is a small GitHub-backed document browser. Its server reads the configured repository's `PremierPedia/` tree through the GitHub REST API and performs uploads, replacements, removals, and file viewing through that same API. The browser never receives the GitHub token.
+PremierPedia's main website is a static GitHub Pages site. The browser reads the public `PremierPedia/` folder in this repository through GitHub's public REST API and fetches documents directly from `raw.githubusercontent.com`. It works on GitHub Pages and does not depend on `localhost:3000`, a running Node.js server, or a browser-side GitHub token.
 
-The GitHub repository is the source of truth. Git does not store empty directories, so newly created empty folders are represented by a hidden `.gitkeep` marker. Uploading the first document creates the path through the normal GitHub contents API.
+The site supports recursive search, file-type filters, sorting, creation dates, and downloads. The Created On column shows each file and folder's latest commit timestamp (`MM/DD/YYYY HH:MM:SS`) and relative age. Selections persist while browsing folders; with the optional write API, selected files/folders can be moved to the open folder, individual files or whole directory trees can be uploaded, and selected paths can be deleted. Upload, move, and delete operations show progress and a minimized completion message. The hosted static site is read-only. Its **Demo Admin Sign In** button only previews the admin controls; changes require the optional write-enabled Node API and are intentionally unavailable from GitHub Pages.
 
-## Requirements
+## GitHub Pages
 
-- Node.js 20 or newer
-- A GitHub token with repository **Contents: Read and write** permission to upload, replace, or delete files. Reading public repository contents does not require a token.
+In the repository's **Settings → Pages**, publish the `main` branch from the repository root. `index.html`, `index.css`, and `index.js` are relative-path assets so they load under the project-site URL (`/PremierPedia/`). No build step is required.
 
-## Configure
+The static browser reads from `PremierPedia/` on the `main` branch of `PremierPediaDev/PremierPedia`. To change that source, update the constants at the top of `index.js`.
+
+## Local preview
+
+Node.js is not required to preview the static site. From the repository root, run:
+
+```sh
+python3 -m http.server 8000
+```
+
+Then open <http://localhost:8000>. The same GitHub API and raw file URLs are used locally and on Pages.
+
+## Optional Node API
+
+`server.js` remains available as an optional API for deployments that need server-side GitHub write operations. It is not used by or required for the static Pages website. To run the API, use Node.js 20 or newer:
 
 ```sh
 npm install
 cp .env.example .env
-```
-
-Set `GITHUB_TOKEN` in `.env` for write operations. The default repository settings are `PremierPediaDev/PremierPedia` and `PremierPedia/`; they can be overridden with `GITHUB_OWNER`, `GITHUB_REPO_NAME`, and `GITHUB_DOCS_PATH`. `GITHUB_BRANCH` is optional and defaults to the repository's default branch. Keep `.env` private; it is ignored by Git.
-
-The browser can search recursively, filter by file type, sort by name, type, size, or latest commit date, and download individual files. **Demo Admin Sign In** previews the admin controls and upload progress UI. This is a client-side demo toggle, not authentication; write requests still require the server-side `GITHUB_TOKEN`.
-
-## Start
-
-```sh
 npm start
 ```
 
-Open <http://localhost:3000>. Use `PORT` in `.env` to select another port. For development with automatic server restarts:
+Set a private `GITHUB_TOKEN` in `.env` to enable API write operations. Never put this token in static-site JavaScript or publish it through GitHub Pages.
 
-```sh
-npm run dev
-```
-
-## API
+The API provides:
 
 - `GET /api/health` — server health
-- `GET /api/docs` — recursively lists files, derives nested folders from the Git tree, and includes each file's latest commit date; an absent or empty `PremierPedia/` tree returns `{ "items": [] }`
+- `GET /api/docs` — recursively lists files, derives nested folders from the Git tree, and includes each file and folder's latest commit date; an absent or empty `PremierPedia/` tree returns `{ "items": [] }`
 - `GET /api/docs/file?path=relative/path` — serves browser-supported file types inline and downloads other types
 - `POST /api/docs/folders` — creates a folder. JSON body: `{ "path": "optional/parent/new-folder" }`
 - `PUT /api/docs/files` — creates or replaces a file. JSON body: `{ "path": "optional/subfolder/name.ext", "contentBase64": "..." }`
+- `POST /api/docs/move` — atomically moves selected files or folders. JSON body: `{ "paths": ["folder/file.txt", "another.txt"], "destination": "target/folder" }`; use an empty destination for the `PremierPedia/` root.
 - `DELETE /api/docs/files` — removes selected files or every file below selected folders. JSON body: `{ "paths": ["name.ext", "folder"] }`
-
-The browser searches file names across the full recursive listing, regardless of the folder currently being browsed. To keep the server-side write token private, run this no-login POC only in an environment whose network access is appropriate for the repository write permissions it exposes.
 
 ## Tests
 

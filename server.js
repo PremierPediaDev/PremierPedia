@@ -14,8 +14,8 @@ const REPOSITORY = process.env.GITHUB_REPO_NAME || environmentRepository || proc
 const DOCS_PATH = normalizeDocsPath(process.env.GITHUB_DOCS_PATH || "PremierPedia");
 const ROOT = __dirname;
 const API_BASE = "https://api.github.com";
-const uploadedOnCache = new Map();
-const uploadedOnRequests = new Map();
+const createdOnCache = new Map();
+const createdOnRequests = new Map();
 const githubHeaders = {
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
@@ -45,10 +45,9 @@ app.get("/api/docs", async (_request, response, next) => {
     }
 
     const items = buildItemsFromTree(treeData.tree || [], DOCS_PATH);
-    const files = items.filter((item) => item.kind === "file");
-    for (let index = 0; index < files.length; index += 8) {
-      await Promise.all(files.slice(index, index + 8).map(async (item) => {
-        item.uploadedOn = await getUploadedOn(item.path, branch);
+    for (let index = 0; index < items.length; index += 8) {
+      await Promise.all(items.slice(index, index + 8).map(async (item) => {
+        item.createdOn = await getCreatedOn(item.path, branch);
       }));
     }
     response.json({ docsPath: DOCS_PATH, branch, items });
@@ -126,7 +125,7 @@ app.put("/api/docs/files", requireGithubToken, async (request, response, next) =
         ...(existingSha ? { sha: existingSha } : {})
       }
     });
-    uploadedOnCache.delete(`${branch}:${fullPath}`);
+    invalidateCreatedOn(branch, fullPath);
     response.json({ path: relativePath, sha: result.content?.sha, commit: result.commit?.sha });
   } catch (error) {
     next(error);
@@ -168,7 +167,108 @@ app.post("/api/docs/folders", requireGithubToken, async (request, response, next
         branch
       }
     });
+    invalidateCreatedOn(branch, `${targetPath}/.gitkeep`);
     response.status(201).json({ path: relativePath });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/docs/move", requireGithubToken, async (request, response, next) => {
+  try {
+    const requestedPaths = request.body?.paths;
+    if (!Array.isArray(requestedPaths) || requestedPaths.length === 0) {
+      throw new HttpError(400, "Select one or more files or folders to move.");
+    }
+    const paths = [...new Set(requestedPaths.map(validateRelativePath))];
+    const destination = request.body?.destination === ""
+      ? ""
+      : validateRelativePath(request.body?.destination);
+    const repository = await githubRequest(`/repos/${OWNER}/${REPOSITORY}`);
+    const branch = process.env.GITHUB_BRANCH || repository.default_branch;
+    const treeData = await githubRequest(
+      `/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    if (treeData.truncated) throw new HttpError(502, "GitHub returned an incomplete repository tree.");
+    const tree = (treeData.tree || []).filter((entry) =>
+      entry.type === "blob" && entry.path.startsWith(`${DOCS_PATH}/`)
+    );
+    const rootPaths = paths.filter((path) => !paths.some((parent) =>
+      parent !== path && path.startsWith(`${parent}/`)
+    ));
+    const movingEntries = [];
+    const sourceRoots = [];
+
+    for (const path of rootPaths) {
+      const source = `${DOCS_PATH}/${path}`;
+      const entries = tree.filter((entry) => entry.path === source || entry.path.startsWith(`${source}/`));
+      if (entries.length === 0) throw new HttpError(404, `No file or folder was found at ${path}.`);
+      sourceRoots.push({ path, source, entries });
+      movingEntries.push(...entries);
+    }
+
+    const movingPaths = new Set(movingEntries.map((entry) => entry.path));
+    const remappedEntries = [];
+    const destinationPaths = new Set();
+    for (const root of sourceRoots) {
+      if (destination === root.path || destination.startsWith(`${root.path}/`)) {
+        throw new HttpError(400, `Cannot move ${root.path} into itself or one of its subfolders.`);
+      }
+      const targetRoot = [DOCS_PATH, destination, root.path.split("/").at(-1)].filter(Boolean).join("/");
+      for (const entry of root.entries) {
+        const suffix = entry.path.slice(root.source.length);
+        const targetPath = `${targetRoot}${suffix}`;
+        if (destinationPaths.has(targetPath)) throw new HttpError(409, "The selected items would produce duplicate destination paths.");
+        destinationPaths.add(targetPath);
+        const existingTarget = tree.find((candidate) => !movingPaths.has(candidate.path) && (
+          candidate.path === targetPath ||
+          targetPath.startsWith(`${candidate.path}/`) ||
+          candidate.path.startsWith(`${targetPath}/`)
+        ));
+        if (existingTarget) throw new HttpError(409, `A file already exists at ${targetPath.slice(DOCS_PATH.length + 1)}.`);
+        remappedEntries.push({
+          path: targetPath,
+          mode: entry.mode,
+          type: entry.type,
+          sha: entry.sha
+        });
+      }
+    }
+
+    const ref = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/ref/heads/${encodeGithubPath(branch)}`);
+    const baseTree = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(ref.object.sha)}`);
+    const updatedTree = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/trees`, {
+      method: "POST",
+      body: {
+        base_tree: baseTree.sha,
+        tree: [
+          ...movingEntries.map((entry) => ({
+            path: entry.path,
+            mode: entry.mode,
+            type: entry.type,
+            sha: null
+          })),
+          ...remappedEntries
+        ]
+      }
+    });
+    const commit = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/commits`, {
+      method: "POST",
+      body: {
+        message: `Move ${rootPaths.length} item${rootPaths.length === 1 ? "" : "s"} into ${destination || DOCS_PATH}`,
+        tree: updatedTree.sha,
+        parents: [ref.object.sha]
+      }
+    });
+    await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/refs/heads/${encodeGithubPath(branch)}`, {
+      method: "PATCH",
+      body: { sha: commit.sha }
+    });
+    for (const entry of [...movingEntries, ...remappedEntries]) invalidateCreatedOn(branch, entry.path);
+    response.json({
+      movedCount: movingEntries.filter((entry) => !entry.path.endsWith("/.gitkeep")).length,
+      destination
+    });
   } catch (error) {
     next(error);
   }
@@ -210,7 +310,7 @@ app.delete("/api/docs/files", requireGithubToken, async (request, response, next
           branch
         }
       });
-      uploadedOnCache.delete(`${branch}:${file.path}`);
+      invalidateCreatedOn(branch, file.path);
     }
     response.json({ deletedCount: filesToDelete.length });
   } catch (error) {
@@ -254,10 +354,10 @@ async function getBranch() {
   return repository.default_branch;
 }
 
-async function getUploadedOn(path, branch) {
+async function getCreatedOn(path, branch) {
   const cacheKey = `${branch}:${path}`;
-  if (uploadedOnCache.has(cacheKey)) return uploadedOnCache.get(cacheKey);
-  if (uploadedOnRequests.has(cacheKey)) return uploadedOnRequests.get(cacheKey);
+  if (createdOnCache.has(cacheKey)) return createdOnCache.get(cacheKey);
+  if (createdOnRequests.has(cacheKey)) return createdOnRequests.get(cacheKey);
 
   const request = (async () => {
     const query = new URLSearchParams({ path, sha: branch, per_page: "1" });
@@ -266,15 +366,15 @@ async function getUploadedOn(path, branch) {
       query.delete("sha");
       commits = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/commits?${query}`);
     }
-    const uploadedOn = getCommitDate(commits[0]);
-    uploadedOnCache.set(cacheKey, uploadedOn);
-    return uploadedOn;
+    const createdOn = getCommitDate(commits[0]);
+    createdOnCache.set(cacheKey, createdOn);
+    return createdOn;
   })();
-  uploadedOnRequests.set(cacheKey, request);
+  createdOnRequests.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    uploadedOnRequests.delete(cacheKey);
+    createdOnRequests.delete(cacheKey);
   }
 }
 
@@ -284,6 +384,16 @@ function getCommitDate(commit) {
     commit?.committer?.date ||
     commit?.author?.date ||
     null;
+}
+
+function invalidateCreatedOn(branch, fullPath) {
+  const segments = fullPath.split("/");
+  const docsSegments = DOCS_PATH.split("/");
+  while (segments.length >= docsSegments.length) {
+    createdOnCache.delete(`${branch}:${segments.join("/")}`);
+    if (segments.length === docsSegments.length) break;
+    segments.pop();
+  }
 }
 
 async function githubRequest(endpoint, options = {}) {

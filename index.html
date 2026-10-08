@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="PremierPedia document repository" />
     <title>PremierPedia</title>
-    <link rel="stylesheet" href="index.css" />
+    <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
     <header class="site-header">
@@ -22,7 +22,7 @@
         <div class="toolbar">
           <div class="search-tools">
             <div class="search-wrap">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="2"/>
                 <path d="m15.5 15.5 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
               </svg>
@@ -30,12 +30,13 @@
             </div>
             <button id="refreshButton" class="button button-secondary icon-button" type="button" aria-label="Refresh documents" title="Refresh documents">
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <path d="M20 7v5h-5M4.9 9a7.5 7.5 0 0 1 13-2L20 12M4 17v-5h5m10.1 3a7.5 7.5 0 0 1-13 2L4 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M20 12a8 8 0 1 1-8-8M8 8l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
           </div>
 
           <div class="toolbar-actions">
+            <button id="moveHereButton" class="button button-secondary" type="button" hidden>Move Here</button>
             <button id="createFolderButton" class="button button-secondary" type="button" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9ZM12 10v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
@@ -48,6 +49,12 @@
               </svg>
               <span>Upload Files</span>
             </button>
+            <button id="uploadFolderButton" class="button button-secondary" type="button" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm9 3v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Upload Folder</span>
+            </button>
             <button id="removeButton" class="button button-secondary danger" type="button" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M4.5 7h15M9 7V4.5h6V7m2.5 0-.8 13h-9.4L6.5 7m3.5 3v6m4-6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -55,12 +62,14 @@
               <span>Delete</span>
             </button>
             <input id="fileInput" type="file" multiple hidden />
+            <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
           </div>
         </div>
 
         <div class="meta-row">
           <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"></nav>
           <div class="meta-controls">
+            <span id="selectionStatus" class="selection-status" aria-live="polite"></span>
             <label class="filter-control">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M4 5h16l-6.2 7.2v5.1l-3.6 1.8v-6.9L4 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -80,8 +89,8 @@
                 <option value="type-asc">Type</option>
                 <option value="size-asc">Size (smallest)</option>
                 <option value="size-desc">Size (largest)</option>
-                <option value="uploadedOn-desc">Uploaded On (newest)</option>
-                <option value="uploadedOn-asc">Uploaded On (oldest)</option>
+                <option value="createdOn-desc">Created On (newest)</option>
+                <option value="createdOn-asc">Created On (oldest)</option>
               </select>
             </label>
             <span id="itemCount" class="item-count"></span>
@@ -96,7 +105,7 @@
                 <th>Name</th>
                 <th>Type</th>
                 <th>Size</th>
-                <th>Uploaded On</th>
+                <th>Created On</th>
                 <th class="action-column"><span class="visually-hidden">Actions</span></th>
               </tr>
             </thead>
@@ -124,6 +133,6 @@
       <div id="activityItems" class="activity-items"></div>
     </aside>
 
-    <script src="index.js" defer></script>
+    <script src="./index.js" defer></script>
   </body>
 </html>
