@@ -6,6 +6,7 @@ const REPOSITORY_BRANCH = "main";
 const DOCUMENTS_PATH = "PremierPedia";
 const GITHUB_API = "https://api.github.com";
 const RAW_GITHUB = "https://raw.githubusercontent.com";
+const fileTypes = window.PremierPediaFileTypes;
 const createdOnCache = new Map();
 const isGitHubPages = window.location.hostname.endsWith("github.io");
 
@@ -14,28 +15,33 @@ const state = {
   docsPath: DOCUMENTS_PATH,
   currentFolder: "",
   selected: new Set(),
+  selectionFolder: null,
   searchTerm: "",
+  isDarkMode: false,
   fileFilter: "folder",
   fileSort: "name-asc",
   activity: null,
   isDemoAdmin: false,
-  draggedPaths: []
+  draggedPaths: [],
+  draggedRowPaths: [],
+  pendingMove: null
 };
 
 const ui = {
   search: document.getElementById("searchInput"),
   fileFilter: document.getElementById("fileFilter"),
-  fileSort: document.getElementById("fileSort"),
   rows: document.getElementById("fileRows"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   itemCount: document.getElementById("itemCount"),
   selectionStatus: document.getElementById("selectionStatus"),
   refresh: document.getElementById("refreshButton"),
+  themeToggle: document.getElementById("themeToggleButton"),
   demoSignIn: document.getElementById("demoSignInButton"),
   moveHere: document.getElementById("moveHereButton"),
   createFolder: document.getElementById("createFolderButton"),
   upload: document.getElementById("uploadButton"),
   uploadFolder: document.getElementById("uploadFolderButton"),
+  downloadSelected: document.getElementById("downloadSelectedButton"),
   remove: document.getElementById("removeButton"),
   fileInput: document.getElementById("fileInput"),
   folderInput: document.getElementById("folderInput"),
@@ -47,7 +53,12 @@ const ui = {
   activityTitle: document.getElementById("activityTitle"),
   activitySummary: document.getElementById("activitySummary"),
   activityItems: document.getElementById("activityItems"),
-  activityClose: document.getElementById("activityClose")
+  activityClose: document.getElementById("activityClose"),
+  moveConfirmation: document.getElementById("moveConfirmationDialog"),
+  moveConfirmationTitle: document.getElementById("moveConfirmationTitle"),
+  moveConfirmationMessage: document.getElementById("moveConfirmationMessage"),
+  cancelMove: document.getElementById("cancelMoveButton"),
+  confirmMove: document.getElementById("confirmMoveButton")
 };
 
 let toastTimer;
@@ -66,17 +77,25 @@ function bindEvents() {
     state.fileFilter = event.target.value;
     render();
   });
-  ui.fileSort.addEventListener("change", (event) => {
-    state.fileSort = event.target.value;
-    if (state.fileSort.startsWith("createdOn")) loadCreatedDatesForCurrentItems();
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-sort-key]");
+    if (!button) return;
+    const key = button.dataset.sortKey;
+    if (!key) return;
+    const direction = state.fileSort === `${key}-asc` ? "desc" : "asc";
+    state.fileSort = `${key}-${direction}`;
+    if (key === "createdOn") loadCreatedDatesForCurrentItems();
+    renderHeaderSortState();
     render();
   });
   ui.refresh.addEventListener("click", refreshRepository);
+  ui.themeToggle.addEventListener("click", toggleTheme);
   ui.demoSignIn.addEventListener("click", toggleDemoAdmin);
   ui.moveHere.addEventListener("click", handleMoveSelected);
   ui.createFolder.addEventListener("click", handleCreateFolder);
   ui.upload.addEventListener("click", () => ui.fileInput.click());
   ui.uploadFolder.addEventListener("click", () => ui.folderInput.click());
+  ui.downloadSelected.addEventListener("click", handleDownloadSelected);
   ui.fileInput.addEventListener("change", (event) => handleUpload(event, false));
   ui.folderInput.addEventListener("change", (event) => handleUpload(event, true));
   ui.remove.addEventListener("click", handleRemoveSelected);
@@ -86,17 +105,29 @@ function bindEvents() {
     state.activity = null;
     renderActivity();
   });
+  ui.cancelMove.addEventListener("click", () => ui.moveConfirmation.close());
+  ui.confirmMove.addEventListener("click", confirmPendingMove);
+  ui.moveConfirmation.addEventListener("close", () => {
+    state.pendingMove = null;
+  });
 
   ui.rows.addEventListener("change", (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") return;
+    if (input.disabled || (state.selected.size && state.selectionFolder !== state.currentFolder)) return;
 
-    if (input.checked) state.selected.add(input.dataset.path);
+    if (input.checked) {
+      if (!state.selected.size) state.selectionFolder = state.currentFolder;
+      state.selected.add(input.dataset.path);
+    }
     else state.selected.delete(input.dataset.path);
+    if (!state.selected.size) state.selectionFolder = null;
     render();
   });
 
   ui.rows.addEventListener("click", (event) => {
+    if (event.target.closest('input[type="checkbox"]')) return;
+
     const downloadButton = event.target.closest("[data-download-path]");
     if (downloadButton) {
       event.preventDefault();
@@ -104,7 +135,15 @@ function bindEvents() {
       return;
     }
 
-    const folderButton = event.target.closest("[data-folder-path]");
+    const renameButton = event.target.closest("[data-rename-path]");
+    if (renameButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleRenameItem(renameButton.dataset.renamePath);
+      return;
+    }
+
+    const folderButton = event.target.closest("button[data-folder-path]");
     if (folderButton) {
       navigateToFolder(folderButton.dataset.folderPath);
       return;
@@ -112,7 +151,12 @@ function bindEvents() {
 
     const fileButton = event.target.closest("[data-file-path]");
     if (fileButton) {
-      window.open(getFileUrl(fileButton.dataset.filePath), "_blank", "noopener,noreferrer");
+      const path = fileButton.dataset.filePath;
+      if (fileTypes.isBrowserOpenable(path, fileButton.dataset.mimeType)) {
+        window.open(getFileUrl(path), "_blank", "noopener,noreferrer");
+      } else {
+        handleDownload(path, fileButton.dataset.fileName);
+      }
     }
   });
 
@@ -123,13 +167,19 @@ function bindEvents() {
     const draggedItem = state.items.find((item) => item.relativePath === path);
     const candidates = state.selected.has(path) ? getSelectedItems() : [draggedItem].filter(Boolean);
     state.draggedPaths = getRootItems(candidates).map((item) => item.relativePath);
+    state.draggedRowPaths = candidates.map((item) => item.relativePath);
     if (!state.draggedPaths.length) {
       event.preventDefault();
+      clearDragStyles();
       return;
     }
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", JSON.stringify(state.draggedPaths));
-    row.classList.add("is-dragging");
+    setDragImage(event, getRootItems(candidates));
+    const draggedRows = new Set(state.draggedRowPaths);
+    for (const draggedRow of ui.rows.querySelectorAll("tr[data-path]")) {
+      if (draggedRows.has(draggedRow.dataset.path)) draggedRow.classList.add("is-dragging");
+    }
   });
 
   ui.rows.addEventListener("dragover", (event) => {
@@ -149,8 +199,9 @@ function bindEvents() {
     const row = event.target.closest("tr[data-folder-path]");
     if (!row || !canDropOn(row.dataset.folderPath)) return;
     event.preventDefault();
+    const paths = [...state.draggedPaths];
     clearDragStyles();
-    moveItems(state.draggedPaths, row.dataset.folderPath);
+    requestMoveConfirmation(paths, row.dataset.folderPath);
   });
 
   ui.rows.addEventListener("dragend", clearDragStyles);
@@ -178,35 +229,56 @@ function bindEvents() {
     const button = event.target.closest("[data-folder-path]");
     if (!button || !canDropOn(button.dataset.folderPath)) return;
     event.preventDefault();
+    const paths = [...state.draggedPaths];
     clearDragStyles();
-    moveItems(state.draggedPaths, button.dataset.folderPath);
+    requestMoveConfirmation(paths, button.dataset.folderPath);
   });
 
   ui.breadcrumbs.addEventListener("dragend", clearDragStyles);
+  window.addEventListener("blur", clearDragStyles);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearDragStyles();
+  });
 }
 
 function navigateToFolder(path) {
+  clearDragStyles();
+  if (ui.moveConfirmation.open) ui.moveConfirmation.close();
   state.currentFolder = path;
   state.searchTerm = "";
   ui.search.value = "";
   state.fileFilter = "folder";
   ui.fileFilter.value = "folder";
+  if (!state.selected.size) state.selectionFolder = null;
   render();
 }
 
 function toggleDemoAdmin() {
   state.isDemoAdmin = !state.isDemoAdmin;
   document.body.classList.toggle("is-demo-admin", state.isDemoAdmin);
-  ui.demoSignIn.textContent = state.isDemoAdmin ? "Demo Admin Sign Out" : "Demo Admin Sign In";
+  ui.demoSignIn.querySelector(".header-sign-in-label").textContent = state.isDemoAdmin ? "Sign out" : "Sign in";
   ui.demoSignIn.setAttribute("aria-pressed", String(state.isDemoAdmin));
   ui.createFolder.hidden = !state.isDemoAdmin;
   ui.upload.hidden = !state.isDemoAdmin;
   ui.uploadFolder.hidden = !state.isDemoAdmin;
-  ui.remove.hidden = !state.isDemoAdmin;
+  ui.remove.hidden = !state.isDemoAdmin || state.selected.size === 0;
   render();
 }
 
+function toggleTheme() {
+  state.isDarkMode = !state.isDarkMode;
+  document.body.classList.toggle("is-dark-mode", state.isDarkMode);
+  ui.themeToggle.setAttribute("aria-pressed", String(state.isDarkMode));
+  const label = state.isDarkMode ? "Switch to light mode" : "Switch to dark mode";
+  ui.themeToggle.setAttribute("aria-label", label);
+  ui.themeToggle.title = label;
+  ui.themeToggle.innerHTML = state.isDarkMode
+    ? '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+
 async function refreshRepository({ preserveFolder = false } = {}) {
+  clearDragStyles();
   ui.refresh.disabled = true;
   ui.emptyMessage.textContent = "Loading documents...";
   try {
@@ -217,6 +289,7 @@ async function refreshRepository({ preserveFolder = false } = {}) {
     state.selected = new Set([...state.selected].filter((path) =>
       state.items.some((item) => item.relativePath === path)
     ));
+    if (!state.selected.size) state.selectionFolder = null;
     render();
     hideToast();
     repository.createdDateErrors = await loadCreatedDates(state.items);
@@ -298,7 +371,6 @@ async function fetchRepositoryItems() {
 }
 
 async function loadCreatedDatesForCurrentItems() {
-  ui.fileSort.disabled = true;
   showToast("Loading creation dates from GitHub...");
   try {
     const errors = await loadCreatedDates(state.items);
@@ -308,7 +380,6 @@ async function loadCreatedDatesForCurrentItems() {
       hideToast();
     }
   } finally {
-    ui.fileSort.disabled = false;
     render();
   }
 }
@@ -372,6 +443,7 @@ function getVisibleItems() {
 function render() {
   const items = getVisibleItems();
   renderBreadcrumbs();
+  renderHeaderSortState();
   renderRows(items);
   renderSelectionState(items);
   renderActivity();
@@ -394,12 +466,31 @@ function renderFileFilters() {
   state.fileFilter = ui.fileFilter.value;
 }
 
+function renderHeaderSortState() {
+  const [sortKey, direction] = state.fileSort.split("-");
+  const headers = document.querySelectorAll("th[data-sort-key]");
+  for (const header of headers) {
+    const button = header.querySelector(".sort-button");
+    const indicator = header.querySelector(".sort-indicator");
+    const isSorted = button?.dataset.sortKey === sortKey;
+    header.classList.toggle("is-sorted", isSorted);
+    header.setAttribute("aria-sort", isSorted ? (direction === "asc" ? "ascending" : "descending") : "none");
+    if (!button || !indicator) continue;
+    if (isSorted) {
+      indicator.textContent = direction === "asc" ? "↑" : "↓";
+      button.setAttribute("aria-label", `Sort by ${button.dataset.sortKey} ${direction === "asc" ? "ascending" : "descending"}`);
+    } else {
+      indicator.textContent = "⇅";
+      button.setAttribute("aria-label", `Sort by ${button.dataset.sortKey}`);
+    }
+  }
+}
+
 function sortItems(items) {
   const [sortKey, direction] = state.fileSort.split("-");
   const multiplier = direction === "desc" ? -1 : 1;
   return items.sort((left, right) => {
-    if (state.fileSort === "name-asc" && !state.searchTerm &&
-      state.fileFilter === "folder" && left.kind !== right.kind) {
+    if (left.kind !== right.kind) {
       return left.kind === "folder" ? -1 : 1;
     }
 
@@ -460,16 +551,20 @@ function renderRows(items) {
   ui.itemCount.textContent = `${items.length} ${items.length === 1 ? "item" : "items"}`;
   if (!items.length) return;
 
+  const draggedRowPaths = new Set(state.draggedRowPaths);
+  const selectionLocked = hasSelectionInAnotherFolder();
   const rows = items.map((item) => {
     const row = document.createElement("tr");
-    row.draggable = state.isDemoAdmin && !isGitHubPages;
+    row.draggable = state.isDemoAdmin && !isGitHubPages && !selectionLocked;
     row.dataset.path = item.relativePath;
     if (item.kind === "folder") row.dataset.folderPath = item.relativePath;
+    row.classList.toggle("is-dragging", draggedRowPaths.has(item.relativePath));
     const checkboxCell = document.createElement("td");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.dataset.path = item.relativePath;
     checkbox.checked = state.selected.has(item.relativePath);
+    checkbox.disabled = selectionLocked;
     row.classList.toggle("is-selected", checkbox.checked);
     checkbox.setAttribute("aria-label", `Select ${item.name}`);
     checkboxCell.append(checkbox);
@@ -479,10 +574,24 @@ function renderRows(items) {
     const nameButton = document.createElement("button");
     nameButton.type = "button";
     nameButton.className = "name-button";
-    nameButton.innerHTML = `${item.kind === "folder" ? folderIcon() : fileIcon()}<span>${escapeHtml(item.name)}</span>`;
+    nameButton.innerHTML = `${item.kind === "folder" ? folderIcon() : fileIcon(item.name)}<span>${escapeHtml(item.name)}</span>`;
     if (item.kind === "folder") nameButton.dataset.folderPath = item.relativePath;
-    else nameButton.dataset.filePath = item.relativePath;
+    else {
+      nameButton.dataset.filePath = item.relativePath;
+      nameButton.dataset.fileName = item.name;
+      nameButton.setAttribute("aria-label", `${fileTypes.isBrowserOpenable(item.relativePath) ? "Open" : "Download"} ${item.name}`);
+    }
     nameCell.append(nameButton);
+    if (state.isDemoAdmin && !selectionLocked) {
+      const renameButton = document.createElement("button");
+      renameButton.type = "button";
+      renameButton.className = "inline-rename-button";
+      renameButton.dataset.renamePath = item.relativePath;
+      renameButton.setAttribute("aria-label", `Rename ${item.name}`);
+      renameButton.title = `Rename ${item.name}`;
+      renameButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m14.5 5.5 4 4M4 20l4.2-.9L19.2 8a2.1 2.1 0 0 0-3-3L5.2 16l-1.2 4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      nameCell.append(renameButton);
+    }
     if (state.searchTerm && item.kind === "file") {
       const location = document.createElement("div");
       location.className = "item-location";
@@ -536,27 +645,46 @@ function renderSelectionState(items = getVisibleItems()) {
   const selectedItems = [...state.selected]
     .map((path) => state.items.find((item) => item.relativePath === path))
     .filter(Boolean);
-  const selectedOutsideFolder = selectedItems.filter((item) => item.parentPath !== state.currentFolder).length;
+  const selectionLocked = hasSelectionInAnotherFolder();
+  const hasSelection = state.selected.size > 0;
+  const selectedFiles = getDownloadTargets();
   ui.selectAll.checked = items.length > 0 && selectedCount === items.length;
   ui.selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
-  ui.remove.disabled = state.selected.size === 0;
-  ui.selectionStatus.textContent = state.selected.size
-    ? `${state.selected.size} selected${selectedOutsideFolder ? ` · ${selectedOutsideFolder} in other folders` : ""}`
-    : "";
+  ui.selectAll.disabled = selectionLocked;
+  ui.remove.disabled = !hasSelection;
+  ui.selectionStatus.textContent = hasSelection ? `${state.selected.size} selected` : "";
   const canMove = state.isDemoAdmin && selectedItems.some((item) => canMoveItem(item, state.currentFolder));
-  ui.moveHere.hidden = !canMove;
+  const destinationMode = hasSelection && state.selectionFolder !== state.currentFolder;
+  ui.moveHere.hidden = !canMove && !destinationMode;
   ui.moveHere.textContent = `Move Here (${state.selected.size})`;
   ui.moveHere.disabled = !canMove || isGitHubPages;
   ui.moveHere.title = isGitHubPages
     ? "Moving files requires the optional write-enabled API server."
     : `Move selected items into ${state.currentFolder || DOCUMENTS_PATH}`;
+
+  ui.createFolder.hidden = !state.isDemoAdmin || destinationMode;
+  ui.upload.hidden = !state.isDemoAdmin || destinationMode;
+  ui.uploadFolder.hidden = !state.isDemoAdmin || destinationMode;
+  ui.downloadSelected.hidden = !selectedFiles.length || selectionLocked;
+  ui.downloadSelected.disabled = !selectedFiles.length;
+  ui.downloadSelected.title = selectedFiles.length > 1
+    ? `Download ${selectedFiles.length} selected files as a ZIP`
+    : "Download selected file";
+  ui.remove.hidden = !state.isDemoAdmin || destinationMode || !hasSelection;
+  document.body.classList.toggle("is-selection-locked", selectionLocked);
 }
 
 function toggleSelectAll(event) {
+  if (hasSelectionInAnotherFolder()) {
+    event.target.checked = false;
+    return;
+  }
+  if (event.target.checked && !state.selected.size) state.selectionFolder = state.currentFolder;
   for (const item of getVisibleItems()) {
     if (event.target.checked) state.selected.add(item.relativePath);
     else state.selected.delete(item.relativePath);
   }
+  if (!state.selected.size) state.selectionFolder = null;
   render();
 }
 
@@ -670,6 +798,66 @@ function fileToBase64(file) {
   });
 }
 
+function getDownloadTargets() {
+  const roots = getSelectedRoots();
+  const filePaths = new Set();
+  for (const item of roots) {
+    if (item.kind === "file") {
+      filePaths.add(item.relativePath);
+      continue;
+    }
+    for (const candidate of state.items) {
+      if (candidate.kind === "file" && candidate.relativePath.startsWith(`${item.relativePath}/`)) {
+        filePaths.add(candidate.relativePath);
+      }
+    }
+  }
+  return [...filePaths]
+    .map((path) => state.items.find((item) => item.relativePath === path))
+    .filter(Boolean)
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+async function handleDownloadSelected() {
+  const downloadable = getDownloadTargets();
+  if (!downloadable.length) {
+    showToast("Select a file or folder to download.");
+    return;
+  }
+  if (downloadable.length === 1) {
+    handleDownload(downloadable[0].relativePath, downloadable[0].name);
+    return;
+  }
+  if (!window.JSZip) {
+    for (const item of downloadable) {
+      handleDownload(item.relativePath, item.name);
+    }
+    return;
+  }
+
+  try {
+    const zip = new window.JSZip();
+    for (const item of downloadable) {
+      const response = await fetch(getFileUrl(item.relativePath));
+      if (!response.ok) throw new Error(`Download failed for ${item.name} (${response.status}).`);
+      zip.file(item.relativePath, await response.blob());
+    }
+    const bundle = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const objectUrl = URL.createObjectURL(bundle);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = "PremierPedia-selected.zip";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    showToast(`Downloaded ${downloadable.length} files as a ZIP.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message);
+  }
+}
+
 async function handleMoveSelected() {
   const movable = getRootItems(getSelectedItems())
     .filter((item) => canMoveItem(item, state.currentFolder));
@@ -683,10 +871,7 @@ async function handleMoveSelected() {
 }
 
 async function moveItems(paths, destination) {
-  const movable = getRootItems(paths
-    .map((path) => state.items.find((item) => item.relativePath === path))
-    .filter(Boolean))
-    .filter((item) => canMoveItem(item, destination));
+  const movable = getMovableItems(paths, destination);
   if (!movable.length) return;
   if (isGitHubPages) {
     showToast("Moving files requires the optional write-enabled API server; GitHub Pages is static and read-only.");
@@ -718,6 +903,7 @@ async function moveItems(paths, destination) {
         if (selectedPath === path || selectedPath.startsWith(`${path}/`)) state.selected.delete(selectedPath);
       }
     }
+    if (!state.selected.size) state.selectionFolder = null;
     render();
     finishActivity("Files Moved", `Moved ${response.movedCount} file${response.movedCount === 1 ? "" : "s"} into ${destination || DOCUMENTS_PATH}.`);
     if (createdDateErrors) {
@@ -813,6 +999,42 @@ async function handleCreateFolder() {
   }
 }
 
+async function handleRenameItem(path) {
+  const item = state.items.find((candidate) => candidate.relativePath === path);
+  if (!item) return;
+  if (isGitHubPages) {
+    showToast("Renaming files requires the optional write-enabled API server.");
+    return;
+  }
+
+  const requestedName = window.prompt(`Rename "${item.name}"`, item.name);
+  if (requestedName === null) return;
+  const newName = requestedName.trim();
+  if (!newName || newName === item.name) return;
+  if (newName === "." || newName === ".." || /[\\/]/.test(newName)) {
+    showToast("Enter a valid name without path separators.");
+    return;
+  }
+
+  beginActivity("Renaming item", [{
+    name: `${item.relativePath} → ${newName}`,
+    status: "Renaming",
+    progress: 50
+  }]);
+  try {
+    const response = await apiRequest("/api/docs/rename", {
+      method: "POST",
+      body: JSON.stringify({ path: item.relativePath, name: newName })
+    });
+    if (state.selected.delete(item.relativePath)) state.selected.add(response.path);
+    await refreshRepository({ preserveFolder: true });
+    finishActivity("Item Renamed", `Renamed "${item.name}" to "${newName}".`);
+  } catch (error) {
+    finishActivity("Rename Failed", error.message);
+    showToast(error.message);
+  }
+}
+
 async function handleRemoveSelected() {
   const selected = getSelectedRoots();
   if (!selected.length) return;
@@ -857,10 +1079,49 @@ function getSelectedRoots() {
   return getRootItems(getSelectedItems());
 }
 
+function hasSelectionInAnotherFolder() {
+  return Boolean(state.searchTerm) || state.fileFilter !== "folder" ||
+    (state.selected.size > 0 && state.selectionFolder !== state.currentFolder);
+}
+
 function getRootItems(items) {
   return items.filter((item) => !items.some((parent) =>
     parent !== item && item.relativePath.startsWith(`${parent.relativePath}/`)
   ));
+}
+
+function getMovableItems(paths, destination) {
+  return getRootItems(paths
+    .map((path) => state.items.find((item) => item.relativePath === path))
+    .filter(Boolean))
+    .filter((item) => canMoveItem(item, destination));
+}
+
+function requestMoveConfirmation(paths, destination) {
+  const movable = getMovableItems(paths, destination);
+  if (!movable.length) return;
+  const destinationName = destination.split("/").at(-1) || DOCUMENTS_PATH;
+  const count = movable.length;
+  const itemsLabel = `${count} item${count === 1 ? "" : "s"}`;
+  ui.moveConfirmationTitle.textContent = count === 1
+    ? `Move "${movable[0].name}"?`
+    : `Move ${itemsLabel}?`;
+  ui.moveConfirmationMessage.textContent = count === 1
+    ? `Move "${movable[0].name}" to "${destinationName}"?`
+    : `Move these ${itemsLabel} to "${destinationName}"?`;
+  state.pendingMove = {
+    paths: movable.map((item) => item.relativePath),
+    destination
+  };
+  ui.moveConfirmation.showModal();
+}
+
+function confirmPendingMove() {
+  const pendingMove = state.pendingMove;
+  if (!pendingMove) return;
+  state.pendingMove = null;
+  ui.moveConfirmation.close();
+  moveItems(pendingMove.paths, pendingMove.destination);
 }
 
 function canDropOn(destination) {
@@ -873,9 +1134,26 @@ function canDropOn(destination) {
 
 function clearDragStyles() {
   state.draggedPaths = [];
+  state.draggedRowPaths = [];
   document.querySelectorAll(".is-dragging, .is-drop-target").forEach((element) => {
     element.classList.remove("is-dragging", "is-drop-target");
   });
+}
+
+function setDragImage(event, items) {
+  const image = document.createElement("div");
+  image.className = "drag-count-indicator";
+  image.setAttribute("aria-hidden", "true");
+  if (items.length === 1) {
+    const item = items[0];
+    image.innerHTML = `${item.kind === "folder" ? folderIcon() : fileIcon(item.name)}<span>${escapeHtml(item.name)}</span>`;
+  } else {
+    image.innerHTML = '<span class="drag-selection-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4.5h9A1.5 1.5 0 0 1 17.5 6v13A1.5 1.5 0 0 1 16 20.5H7A1.5 1.5 0 0 1 5.5 19V6A1.5 1.5 0 0 1 7 4.5Zm3-2h8A1.5 1.5 0 0 1 19.5 4v13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span></span>';
+    image.lastElementChild.textContent = `${items.length} items`;
+  }
+  document.body.append(image);
+  event.dataTransfer.setDragImage(image, 16, 16);
+  window.requestAnimationFrame(() => image.remove());
 }
 
 function canMoveItem(item, destination) {
@@ -931,8 +1209,24 @@ function folderIcon() {
   return '<span class="item-icon folder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M3 10.5h18" stroke="currentColor" stroke-width="1.7"/></svg></span>';
 }
 
-function fileIcon() {
-  return '<span class="item-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5Zm6 0v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 15h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>';
+function fileIcon(filename) {
+  const iconType = fileTypes.getIconType(filename);
+  const artwork = {
+    pdf: '<path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5Zm6 0v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 13.5h7m-7 3h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 10h8" stroke="currentColor" stroke-width="1.7"/>',
+    text: '<path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5Zm6 0v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 15h6M9 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    word: '<path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5Zm6 0v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8.5 12 1.1 5 1.4-3.3 1.4 3.3 1.1-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+    spreadsheet: '<rect x="5" y="4" width="14" height="16" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M5 9h14M10 9v11m4-11v11M5 14h14" stroke="currentColor" stroke-width="1.5"/>',
+    presentation: '<rect x="4" y="4" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 16v4m-4 0h8m-9-5 3-3 2 2 4-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    csv: '<path d="M5 4h14v16H5zM5 9h14M5 14h14M10 9v11m5-11v11" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+    image: '<rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="9" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="m5 17 5-5 3 3 2-2 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+    audio: '<path d="M4 10v4m4-7v10m4-13v16m4-13v10m4-7v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+    video: '<rect x="3.5" y="5" width="17" height="14" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="m10 9 5 3-5 3V9Z" fill="currentColor"/>',
+    archive: '<path d="M4 7h16v13H4zM3 4h18v3H3zM10 10h4v2h-4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
+    data: '<ellipse cx="12" cy="6" rx="8" ry="3" stroke="currentColor" stroke-width="1.6"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6m-16 0c0 1.7 3.6 3 8 3s8-1.3 8-3" stroke="currentColor" stroke-width="1.6"/>',
+    code: '<path d="m8 7-5 5 5 5m8-10 5 5-5 5m-2-12-4 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    generic: '<path d="M7 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 6 20V5A1.5 1.5 0 0 1 7.5 3.5Zm6 0v4h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 15h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+  }[iconType];
+  return `<span class="item-icon file-${iconType}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none">${artwork}</svg></span>`;
 }
 
 function formatSize(size) {
@@ -946,17 +1240,13 @@ function formatDateTime(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  const parts = new Intl.DateTimeFormat("en-US", {
-    month: "2-digit",
-    day: "2-digit",
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(date);
-  const part = (type) => parts.find((entry) => entry.type === type)?.value || "";
-  return `${part("month")}/${part("day")}/${part("year")} ${part("hour")}:${part("minute")}:${part("second")}`;
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function formatRelativeTime(value) {

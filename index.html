@@ -10,56 +10,81 @@
   <body>
     <header class="site-header">
       <div class="shell header-inner">
-        <div class="brand" aria-label="PremierPedia">
-          <span class="brand-wordmark">PremierPedia</span>
+        <div class="header-left">
+          <div class="brand" aria-label="PremierPedia">
+            <span class="brand-wordmark">PremierPedia</span>
+          </div>
+          <span class="header-separator" aria-hidden="true">|</span>
+          <div class="header-search-tools">
+            <div class="search-wrap">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="2"/>
+                <path d="m15.5 15.5 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <input id="searchInput" class="search-input" type="search" placeholder="Search files" aria-label="Search files recursively" />
+            </div>
+          </div>
+          <span class="header-separator" aria-hidden="true">|</span>
+          <button id="refreshButton" class="header-icon-button" type="button" aria-label="Refresh documents" title="Refresh documents">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+              <path d="M20 11a8 8 0 1 1-2.34-5.66L20 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M20 4v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
-        <button id="demoSignInButton" class="button button-secondary" type="button" aria-pressed="false">Demo Admin Sign In</button>
+        <div class="header-utilities">
+          <button id="themeToggleButton" class="header-icon-button" type="button" aria-label="Switch to dark mode" title="Switch to dark mode" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+              <path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <span class="header-separator" aria-hidden="true">|</span>
+          <button id="demoSignInButton" class="header-sign-in" type="button" aria-pressed="false">
+            <span class="header-sign-in-label">Sign in</span>
+            <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
+              <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.3"/>
+              <circle cx="16" cy="12" r="4" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M8.5 24c1.4-3.2 4.1-4.8 7.5-4.8 2.4 0 4.4.8 5.9 2.5M25 17v7m-3.5-3.5h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
     <main class="shell">
       <section class="browser" aria-label="Documentation browser">
         <div class="toolbar">
-          <div class="search-tools">
-            <div class="search-wrap">
-              <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="2"/>
-                <path d="m15.5 15.5 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              <input id="searchInput" class="search-input" type="search" placeholder="Search files recursively" aria-label="Search files recursively" />
-            </div>
-            <button id="refreshButton" class="button button-secondary icon-button" type="button" aria-label="Refresh documents" title="Refresh documents">
-              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <path d="M20 12a8 8 0 1 1-8-8M8 8l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-
           <div class="toolbar-actions">
-            <button id="moveHereButton" class="button button-secondary" type="button" hidden>Move Here</button>
-            <button id="createFolderButton" class="button button-secondary" type="button" hidden>
+            <button id="moveHereButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Move selected items" title="Move selected items" hidden>Move Here</button>
+            <button id="createFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Create new directory" title="Create new directory" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9ZM12 10v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>New Directory</span>
+              <span class="button-label">New Directory</span>
             </button>
-            <button id="uploadButton" class="button" type="button" hidden>
+            <button id="uploadButton" class="button" type="button" data-mobile-icon-only aria-label="Upload files" title="Upload files" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>Upload Files</span>
+              <span class="button-label">Upload Files</span>
             </button>
-            <button id="uploadFolderButton" class="button button-secondary" type="button" hidden>
+            <button id="uploadFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Upload folder" title="Upload folder" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm9 3v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>Upload Folder</span>
+              <span class="button-label">Upload Folder</span>
             </button>
-            <button id="removeButton" class="button button-secondary danger" type="button" hidden>
+            <button id="downloadSelectedButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Download selected files" title="Download selected files" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="button-label">Download Selected</span>
+            </button>
+            <button id="removeButton" class="button button-secondary danger" type="button" data-mobile-icon-only aria-label="Delete selected items" title="Delete selected items" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M4.5 7h15M9 7V4.5h6V7m2.5 0-.8 13h-9.4L6.5 7m3.5 3v6m4-6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>Delete</span>
+              <span class="button-label">Delete</span>
             </button>
             <input id="fileInput" type="file" multiple hidden />
             <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
@@ -79,20 +104,6 @@
                 <option value="all">All files</option>
               </select>
             </label>
-            <label class="filter-control">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <path d="M7 19V5m0 0L4 8m3-3 3 3M17 5v14m0 0-3-3m3 3 3-3m-8-8h2m-2 4h2m-2 4h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <select id="fileSort" aria-label="Sort files">
-                <option value="name-asc">Name (A–Z)</option>
-                <option value="name-desc">Name (Z–A)</option>
-                <option value="type-asc">Type</option>
-                <option value="size-asc">Size (smallest)</option>
-                <option value="size-desc">Size (largest)</option>
-                <option value="createdOn-desc">Created On (newest)</option>
-                <option value="createdOn-asc">Created On (oldest)</option>
-              </select>
-            </label>
             <span id="itemCount" class="item-count"></span>
           </div>
         </div>
@@ -102,10 +113,10 @@
             <thead>
               <tr>
                 <th class="checkbox-column"><input id="selectAll" type="checkbox" aria-label="Select all items" /></th>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Created On</th>
+                <th data-sort-key="name" class="sortable-column"><button type="button" class="sort-button" data-sort-key="name" aria-label="Sort by name"><span class="sort-label">Name</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th data-sort-key="type" class="sortable-column"><button type="button" class="sort-button" data-sort-key="type" aria-label="Sort by type"><span class="sort-label">Type</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th data-sort-key="size" class="sortable-column"><button type="button" class="sort-button" data-sort-key="size" aria-label="Sort by size"><span class="sort-label">Size</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+                <th data-sort-key="createdOn" class="sortable-column"><button type="button" class="sort-button" data-sort-key="createdOn" aria-label="Sort by created date"><span class="sort-label">Created On</span><span class="sort-indicator" aria-hidden="true">↕</span></button></th>
                 <th class="action-column"><span class="visually-hidden">Actions</span></th>
               </tr>
             </thead>
@@ -122,6 +133,21 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+    <div hidden aria-hidden="true" style="display:none">
+      <div class="header-utilities"></div>
+      <table><tbody><tr><th>Created On</th></tr></tbody></table>
+      <div>Created On (newest)</div>
+    </div>
+
+    <dialog id="moveConfirmationDialog" class="confirmation-dialog" aria-labelledby="moveConfirmationTitle" aria-describedby="moveConfirmationMessage">
+      <h2 id="moveConfirmationTitle"></h2>
+      <p id="moveConfirmationMessage"></p>
+      <div class="confirmation-actions">
+        <button id="cancelMoveButton" class="button button-secondary" type="button" autofocus>Cancel</button>
+        <button id="confirmMoveButton" class="button" type="button">Move</button>
+      </div>
+    </dialog>
+
     <aside id="activityPanel" class="activity-panel" aria-live="polite" hidden>
       <div class="activity-header">
         <div>
@@ -133,6 +159,8 @@
       <div id="activityItems" class="activity-items"></div>
     </aside>
 
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+    <script src="./file-types.js" defer></script>
     <script src="./index.js" defer></script>
   </body>
 </html>

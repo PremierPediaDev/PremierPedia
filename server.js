@@ -3,6 +3,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const { buildItemsFromTree, validateRelativePath } = require("./lib/docs");
+const fileTypes = require("./file-types");
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ app.get("/", (_request, response) => response.sendFile(`${ROOT}/index.html`));
 app.get("/index.html", (_request, response) => response.sendFile(`${ROOT}/index.html`));
 app.get("/index.css", (_request, response) => response.sendFile(`${ROOT}/index.css`));
 app.get("/index.js", (_request, response) => response.sendFile(`${ROOT}/index.js`));
+app.get("/file-types.js", (_request, response) => response.sendFile(`${ROOT}/file-types.js`));
 
 app.get("/api/health", (_request, response) => {
   response.json({ status: "ok" });
@@ -86,12 +88,15 @@ app.get("/api/docs/file", async (request, response, next) => {
     const filename = encodeURIComponent(relativePath.split("/").at(-1)).replace(/['()*]/g, (character) =>
       `%${character.charCodeAt(0).toString(16).toUpperCase()}`
     );
-    response
+    const fileResponse = response
       .set("Content-Type", contentType || "application/octet-stream")
       .set("Content-Disposition", `${contentType ? "inline" : "attachment"}; filename*=UTF-8''${filename}`)
       .set("X-Content-Type-Options", "nosniff")
-      .set("Cache-Control", "private, no-store")
-      .send(content);
+      .set("Cache-Control", "private, no-store");
+    if (contentType && /^(?:text\/html|image\/svg\+xml)/i.test(contentType)) {
+      fileResponse.set("Content-Security-Policy", "sandbox");
+    }
+    fileResponse.send(content);
   } catch (error) {
     next(error);
   }
@@ -274,6 +279,89 @@ app.post("/api/docs/move", requireGithubToken, async (request, response, next) =
   }
 });
 
+app.post("/api/docs/rename", requireGithubToken, async (request, response, next) => {
+  try {
+    const relativePath = validateRelativePath(request.body?.path);
+    const name = request.body?.name;
+    if (typeof name !== "string" || name.length === 0 || name.length > 255 ||
+      name !== name.trim() || name === "." || name === ".." ||
+      name.includes("/") || name.includes("\\") || name.includes("\0")) {
+      throw new HttpError(400, "Enter a valid new name without path separators.");
+    }
+
+    const source = `${DOCS_PATH}/${relativePath}`;
+    const parentPath = relativePath.includes("/")
+      ? relativePath.slice(0, relativePath.lastIndexOf("/"))
+      : "";
+    const targetRelativePath = [parentPath, name].filter(Boolean).join("/");
+    const target = `${DOCS_PATH}/${targetRelativePath}`;
+    if (source === target) {
+      throw new HttpError(400, "The new name must be different from the current name.");
+    }
+
+    const branch = await getBranch();
+    const treeData = await githubRequest(
+      `/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    if (treeData.truncated) throw new HttpError(502, "GitHub returned an incomplete repository tree.");
+    const tree = (treeData.tree || []).filter((entry) =>
+      entry.type === "blob" && entry.path.startsWith(`${DOCS_PATH}/`)
+    );
+    const sourceEntries = tree.filter((entry) =>
+      entry.path === source || entry.path.startsWith(`${source}/`)
+    );
+    if (!sourceEntries.length) throw new HttpError(404, `No file or folder was found at ${relativePath}.`);
+
+    const movingPaths = new Set(sourceEntries.map((entry) => entry.path));
+    const conflict = tree.find((entry) => !movingPaths.has(entry.path) && (
+      entry.path === target ||
+      entry.path.startsWith(`${target}/`) ||
+      target.startsWith(`${entry.path}/`)
+    ));
+    if (conflict) throw new HttpError(409, `A file or folder already exists at ${targetRelativePath}.`);
+
+    const remappedEntries = sourceEntries.map((entry) => ({
+      path: `${target}${entry.path.slice(source.length)}`,
+      mode: entry.mode,
+      type: entry.type,
+      sha: entry.sha
+    }));
+    const ref = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/ref/heads/${encodeGithubPath(branch)}`);
+    const baseTree = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(ref.object.sha)}`);
+    const updatedTree = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/trees`, {
+      method: "POST",
+      body: {
+        base_tree: baseTree.sha,
+        tree: [
+          ...sourceEntries.map((entry) => ({
+            path: entry.path,
+            mode: entry.mode,
+            type: entry.type,
+            sha: null
+          })),
+          ...remappedEntries
+        ]
+      }
+    });
+    const commit = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/commits`, {
+      method: "POST",
+      body: {
+        message: `Rename ${relativePath} to ${targetRelativePath}`,
+        tree: updatedTree.sha,
+        parents: [ref.object.sha]
+      }
+    });
+    await githubRequest(`/repos/${OWNER}/${REPOSITORY}/git/refs/heads/${encodeGithubPath(branch)}`, {
+      method: "PATCH",
+      body: { sha: commit.sha }
+    });
+    for (const entry of [...sourceEntries, ...remappedEntries]) invalidateCreatedOn(branch, entry.path);
+    response.json({ path: targetRelativePath });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/docs/files", requireGithubToken, async (request, response, next) => {
   try {
     const requestedPaths = request.body?.paths;
@@ -425,32 +513,8 @@ function encodeGithubPath(value) {
 }
 
 function getInlineContentType(filePath) {
-  const extension = filePath.split("/").at(-1).split(".").at(-1).toLowerCase();
-  const contentTypes = {
-    txt: "text/plain; charset=utf-8",
-    text: "text/plain; charset=utf-8",
-    log: "text/plain; charset=utf-8",
-    md: "text/plain; charset=utf-8",
-    csv: "text/csv; charset=utf-8",
-    json: "application/json; charset=utf-8",
-    xml: "application/xml; charset=utf-8",
-    pdf: "application/pdf",
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-    avif: "image/avif",
-    bmp: "image/bmp",
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    ogg: "audio/ogg",
-    m4a: "audio/mp4",
-    mp4: "video/mp4",
-    webm: "video/webm",
-    mov: "video/quicktime"
-  };
-  return contentTypes[extension] || null;
+  if (!fileTypes.isBrowserOpenable(filePath)) return null;
+  return fileTypes.getMimeType(filePath);
 }
 
 function isBase64(value) {
