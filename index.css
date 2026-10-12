@@ -259,6 +259,8 @@ main.shell {
 .browser {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   margin: 32px 0 56px;
   background: var(--panel);
@@ -582,6 +584,8 @@ main.shell {
 
 .table-wrap {
   flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
   overflow: auto;
 }
@@ -733,6 +737,7 @@ body.is-selection-locked .file-table input[type="checkbox"] {
 .name-button {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   gap: 12px;
   border: none;
   padding: 0;
@@ -740,6 +745,13 @@ body.is-selection-locked .file-table input[type="checkbox"] {
   color: var(--text);
   font-weight: 700;
   text-align: left;
+}
+
+.name-button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .name-button:hover {
@@ -1182,17 +1194,21 @@ body.is-dark-mode .inline-rename-button:focus-visible {
 
 .activity-item {
   display: grid;
+  min-width: 0;
   gap: 6px;
 }
 
 .activity-item-description {
   display: flex;
+  min-width: 0;
   justify-content: space-between;
   gap: 12px;
   font-size: 0.82rem;
 }
 
 .activity-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1217,6 +1233,7 @@ body.is-dark-mode .inline-rename-button:focus-visible {
 
 .activity-item progress {
   width: 100%;
+  min-width: 0;
   height: 7px;
   accent-color: var(--primary);
 }
@@ -1288,6 +1305,13 @@ body.is-dark-mode .inline-rename-button:focus-visible {
     padding: 10px 12px;
   }
 
+  .browser,
+  .meta-row,
+  .path-bar {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .toolbar-actions {
     display: flex;
     flex-wrap: nowrap;
@@ -1354,13 +1378,23 @@ body.is-dark-mode .inline-rename-button:focus-visible {
   }
 
   .filter-control {
-    flex: 0 1 auto;
-    max-width: 120px;
+    position: relative;
+    flex: 0 0 34px;
+    justify-content: center;
+    width: 34px;
+    max-width: 34px;
+    min-height: 30px;
+    padding: 0;
   }
 
   .filter-control select {
-    max-width: 76px;
+    position: absolute;
+    inset: 0;
     width: 100%;
+    max-width: none;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
   }
 
   .selection-status,
@@ -1370,12 +1404,31 @@ body.is-dark-mode .inline-rename-button:focus-visible {
 
   .table-wrap {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     overflow-x: auto;
   }
 
   .file-table {
-    width: 100%;
+    width: max(100%, 640px);
+    min-width: 640px;
+    table-layout: fixed;
+  }
+
+  .name-cell {
     min-width: 0;
+    overflow: hidden;
+  }
+
+  .name-button {
+    width: calc(100% - 28px);
+    max-width: 100%;
+  }
+
+  .item-location {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .file-table th,

@@ -763,7 +763,7 @@ function renderFileFilters() {
     .map((item) => item.typeLabel))]
     .sort((left, right) => left.localeCompare(right));
   ui.fileFilter.replaceChildren(
-    new Option("-- None --", "folder"),
+    new Option("None", "folder"),
     new Option("All files", "all"),
     ...types.map((type) => new Option(`${type} files`, type))
   );
@@ -797,6 +797,11 @@ function sortItems(items) {
   const [sortKey, direction] = state.fileSort.split("-");
   const multiplier = direction === "desc" ? -1 : 1;
   return items.sort((left, right) => {
+    if (isNavigationEntry(left) !== isNavigationEntry(right)) {
+      return isNavigationEntry(left) ? -1 : 1;
+    }
+    if (isNavigationEntry(left)) return 0;
+
     if (left.kind !== right.kind) {
       return left.kind === "folder" ? -1 : 1;
     }
@@ -896,6 +901,7 @@ function renderRows(items) {
     const nameButton = document.createElement("button");
     nameButton.type = "button";
     nameButton.className = "name-button";
+    nameButton.title = item.name;
     nameButton.innerHTML = `${item.kind === "folder" ? folderIcon() : fileIcon(item.name)}<span>${escapeHtml(item.name)}</span>`;
     if (item.kind === "folder") nameButton.dataset.folderPath = item.relativePath;
     else {
@@ -929,7 +935,7 @@ function renderRows(items) {
 
     const sizeCell = document.createElement("td");
     sizeCell.className = "size-cell";
-    sizeCell.textContent = item.kind === "folder" ? formatSize(item.size ?? 0) : formatSize(item.size);
+    sizeCell.textContent = isNavigationRow ? "—" : item.kind === "folder" ? formatSize(item.size ?? 0) : formatSize(item.size);
     const createdOnCell = document.createElement("td");
     createdOnCell.className = "created-on-cell";
     const dateValue = formatDateTime(item.createdOn);
@@ -1310,6 +1316,7 @@ function renderActivity() {
     const name = document.createElement("span");
     name.className = "activity-item-name";
     name.textContent = item.name;
+    name.title = item.name;
     const status = document.createElement("span");
     status.className = `activity-item-status${item.status.startsWith("Failed") ? " is-error" : item.status === "Uploaded" ? " is-done" : ""}`;
     status.textContent = item.status;

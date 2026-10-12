@@ -162,6 +162,17 @@ test("folders stay before files for every sort mode", () => {
     javascript.indexOf("function sortItems(items)"),
     javascript.indexOf("function compareNullable")
   );
+  assert.match(sortItems, /if \(isNavigationEntry\(left\) !== isNavigationEntry\(right\)\)\s*\{\s*return isNavigationEntry\(left\) \? -1 : 1;\s*\}\s*if \(isNavigationEntry\(left\)\) return 0;/);
   assert.match(sortItems, /if \(left\.kind !== right\.kind\)\s*\{\s*return left\.kind === "folder" \? -1 : 1;\s*\}/);
   assert.doesNotMatch(sortItems, /state\.fileSort === "name-asc"[^}]+left\.kind/);
+  assert.match(javascript, /sizeCell\.textContent = isNavigationRow \? "—"/);
+});
+
+test("mobile file browser keeps overflow inside the table and filter icon", () => {
+  const mobileStyles = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
+  assert.match(mobileStyles, /\.table-wrap\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;/s);
+  assert.match(mobileStyles, /\.file-table\s*\{[^}]*width:\s*max\(100%,\s*640px\);[^}]*min-width:\s*640px;[^}]*table-layout:\s*fixed;/s);
+  assert.match(mobileStyles, /\.filter-control select\s*\{[^}]*opacity:\s*0;/s);
+  assert.match(css, /\.name-button > span\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s);
+  assert.match(css, /\.activity-item-name\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;/s);
 });
