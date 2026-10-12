@@ -6,6 +6,19 @@
     <meta name="description" content="PremierPedia document repository" />
     <title>PremierPedia</title>
     <link rel="icon" href="https://premierinc.com/favicon.ico" />
+    <script>
+      (() => {
+        try {
+          const savedTheme = window.localStorage.getItem("premierpedia-theme");
+          const preferredTheme = savedTheme === "dark" || savedTheme === "light"
+            ? savedTheme
+            : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          document.documentElement.setAttribute("data-theme", preferredTheme);
+        } catch (error) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
@@ -48,7 +61,32 @@
     <main class="shell">
       <section class="browser" aria-label="Documentation browser">
         <div class="meta-row">
+          <div class="meta-controls">
+            <label class="filter-control">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M4 5h16l-6.2 7.2v5.1l-3.6 1.8v-6.9L4 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+              </svg>
+              <select id="fileFilter" aria-label="Filter files">
+                <option value="folder"></option>
+                <option value="all">All files</option>
+              </select>
+            </label>
+            <!--span id="selectionStatus" class="selection-status" aria-live="polite"></span-->
+            <span id="itemCount" class="item-count"></span>
+          </div>
           <div class="toolbar-actions">
+            <button id="moveButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Move selected items" title="Move selected items" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M8 7h8m0 0V4.5M16 7l-4 4m0 0H4.5m11.5 0v3.5m0 0H16m0 0 4-4M8 17h8m0 0v2.5M16 17l-4 4m0 0H4.5m11.5 0v-3.5m0 0H16m0 0 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="button-label">Move</span>
+            </button>
+            <button id="cancelMoveMetaButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Cancel move" title="Cancel move" hidden>
+              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              <span class="button-label">Cancel Move</span>
+            </button>
             <button id="moveHereButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Move selected items" title="Move selected items" hidden>Move Here</button>
             <button id="createFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Create new directory" title="Create new directory" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -56,17 +94,12 @@
               </svg>
               <span class="button-label">New Directory</span>
             </button>
-            <button id="uploadButton" class="button" type="button" data-mobile-icon-only aria-label="Upload files" title="Upload files" hidden>
+            <button id="uploadButton" class="button" type="button" data-mobile-icon-only aria-label="Upload files" title="Upload files" aria-haspopup="menu" aria-expanded="false" aria-controls="uploadMenu" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               <span class="button-label">Upload</span>
-            </button>
-            <button id="uploadFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Upload folder" title="Upload folder" hidden>
-              <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Zm9 3v6m-3-3h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="button-label">Upload Folder</span>
+              <svg class="button-icon upload-caret" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false"><path d="m2.5 4.5 3.5 3 3.5-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <button id="downloadSelectedButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Download selected files" title="Download selected files" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -82,23 +115,10 @@
             </button>
             <input id="fileInput" type="file" multiple hidden />
             <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
-            <div id="uploadMenu" class="upload-menu" hidden>
-              <button id="uploadFilesMenuButton" class="upload-menu-item" type="button">Upload files</button>
-              <button id="uploadFolderMenuButton" class="upload-menu-item" type="button">Upload folder</button>
+            <div id="uploadMenu" class="upload-menu" role="menu" aria-label="Upload type" hidden>
+              <button id="uploadFilesMenuButton" class="upload-menu-item" type="button" role="menuitem">File</button>
+              <button id="uploadFolderMenuButton" class="upload-menu-item" type="button" role="menuitem">Folder</button>
             </div>
-          </div>
-          <div class="meta-controls">
-            <span id="selectionStatus" class="selection-status" aria-live="polite"></span>
-            <label class="filter-control">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-                <path d="M4 5h16l-6.2 7.2v5.1l-3.6 1.8v-6.9L4 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-              </svg>
-              <select id="fileFilter" aria-label="Filter files">
-                <option value="folder"></option>
-                <option value="all">All files</option>
-              </select>
-            </label>
-            <span id="itemCount" class="item-count"></span>
           </div>
         </div>
 
@@ -155,8 +175,12 @@
       <h2 id="moveConfirmationTitle"></h2>
       <p id="moveConfirmationMessage"></p>
       <div class="confirmation-actions">
-        <button id="cancelMoveButton" class="button button-secondary" type="button" autofocus>Cancel</button>
-        <button id="confirmMoveButton" class="button" type="button">Move</button>
+        <button id="cancelMoveButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Cancel move" title="Cancel move" autofocus>
+          <span class="button-label">Cancel</span>
+        </button>
+        <button id="confirmMoveButton" class="button" type="button" data-mobile-icon-only aria-label="Move selected items" title="Move selected items">
+          <span class="button-label">Move</span>
+        </button>
       </div>
     </dialog>
 

@@ -53,6 +53,7 @@ test("navigation bar has icon-only history and a single refresh control", () => 
   assert.doesNotMatch(navigation, />\s*(Back|Forward|Refresh)\s*</);
   assert.equal((html.match(/id="refreshButton"/g) || []).length, 1);
   assert.doesNotMatch(html, /id="pathRefreshButton"/);
+  assert.doesNotMatch(javascript, /pathRefresh/);
   assert.match(css, /\.breadcrumbs\s*\{[^}]*border-radius:\s*20px;[^}]*background:\s*var\(--panel\);/s);
   assert.match(javascript, /ui\.refresh\.addEventListener\("click", \(\) => refreshRepository\(\{ preserveFolder: true \}\)\)/);
 });
@@ -83,12 +84,16 @@ test("drag-and-drop uses the full selection, restores placeholders, and confirms
 test("move and folder upload controls preserve selection across navigation", () => {
   assert.match(html, /id="moveHereButton"/);
   assert.doesNotMatch(html, /id="renameButton"/);
-  assert.match(html, /id="uploadFolderButton"/);
+  assert.match(html, /id="uploadButton"[^>]*aria-haspopup="menu"/);
+  assert.match(html, /id="uploadFilesMenuButton"[^>]*>File<\/button>/);
+  assert.match(html, /id="uploadFolderMenuButton"[^>]*>Folder<\/button>/);
+  assert.doesNotMatch(html, /id="uploadFolderButton"/);
+  assert.doesNotMatch(javascript, /ui\.uploadFolder\./);
   assert.match(html, /id="folderInput"[^>]*webkitdirectory/);
   assert.match(html, /id="selectionStatus"/);
   assert.match(css, /\.file-table tbody tr\.is-selected/);
   assert.match(css, /\.activity-panel\.is-minimized \.activity-items\s*\{\s*display:\s*none;/);
-  assert.match(javascript, /ui\.folderInput\.addEventListener\("change", \(event\) => handleUpload\(event, true\)\)/);
+  assert.match(javascript, /if \(isFolder\) ui\.folderInput\.click\(\)/);
   assert.match(javascript, /finishActivity\("Files Moved"/);
   assert.match(javascript, /finishActivity\("Files Deleted"/);
   assert.match(javascript, /"Upload Completed"/);
@@ -105,7 +110,18 @@ test("move and folder upload controls preserve selection across navigation", () 
   assert.match(javascript, /selectionFolder: null/);
   assert.match(javascript, /checkbox\.disabled = selectionLocked/);
   assert.match(javascript, /state\.selectionFolder !== state\.currentFolder/);
-  assert.match(javascript, /ui\.createFolder\.hidden = !state\.isDemoAdmin \|\| destinationMode/);
+  assert.match(javascript, /ui\.createFolder\.hidden = !state\.isDemoAdmin \|\| hasSelection \|\| destinationMode/);
+  assert.match(javascript, /ui\.upload\.hidden = !state\.isDemoAdmin \|\| !showPrimaryActions/);
+  assert.match(javascript, /event\.key === "Escape"/);
+});
+
+test("meta row leads with compact filter controls and right-aligns actions", () => {
+  const metaRow = html.slice(html.indexOf("class=\"meta-row\""), html.indexOf("class=\"path-bar\""));
+  assert.ok(metaRow.indexOf("class=\"meta-controls\"") < metaRow.indexOf("class=\"toolbar-actions\""));
+  assert.ok(metaRow.indexOf("class=\"filter-control\"") < metaRow.indexOf("id=\"selectionStatus\""));
+  assert.match(css, /\.meta-row \.button\s*\{[^}]*min-height:\s*30px;/s);
+  assert.match(css, /\.filter-control\s*\{[^}]*min-height:\s*30px;/s);
+  assert.match(css, /\.toolbar-actions\s*\{[^}]*margin-left:\s*auto;/s);
 });
 
 test("toolbar controls use compact dimensions and search input is shorter", () => {

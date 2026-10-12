@@ -35,16 +35,17 @@ const ui = {
   rows: document.getElementById("fileRows"),
   breadcrumbs: document.getElementById("breadcrumbs"),
   itemCount: document.getElementById("itemCount"),
-  selectionStatus: document.getElementById("selectionStatus"),
+  //selectionStatus: document.getElementById("selectionStatus"),
   refresh: document.getElementById("refreshButton"),
   pathBack: document.getElementById("pathBackButton"),
   pathForward: document.getElementById("pathForwardButton"),
   themeToggle: document.getElementById("themeToggleButton"),
   demoSignIn: document.getElementById("demoSignInButton"),
+  move: document.getElementById("moveButton"),
   moveHere: document.getElementById("moveHereButton"),
+  cancelMoveMeta: document.getElementById("cancelMoveMetaButton"),
   createFolder: document.getElementById("createFolderButton"),
   upload: document.getElementById("uploadButton"),
-  uploadFolder: document.getElementById("uploadFolderButton"),
   uploadMenu: document.getElementById("uploadMenu"),
   uploadFilesMenu: document.getElementById("uploadFilesMenuButton"),
   uploadFolderMenu: document.getElementById("uploadFolderMenuButton"),
@@ -70,9 +71,76 @@ const ui = {
 
 let toastTimer;
 
+function applySavedTheme() {
+  try {
+    const savedTheme = window.localStorage.getItem("premierpedia-theme");
+    const isDarkMode = savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    state.isDarkMode = isDarkMode;
+    document.documentElement.setAttribute("data-theme", isDarkMode ? "dark" : "light");
+    document.body.classList.toggle("is-dark-mode", isDarkMode);
+    ui.themeToggle?.setAttribute("aria-pressed", String(isDarkMode));
+    const label = isDarkMode ? "Switch to light mode" : "Switch to dark mode";
+    ui.themeToggle?.setAttribute("aria-label", label);
+    ui.themeToggle?.setAttribute("title", label);
+    ui.themeToggle.innerHTML = isDarkMode
+      ? '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  } catch (error) {
+    state.isDarkMode = false;
+    document.documentElement.setAttribute("data-theme", "light");
+    document.body.classList.remove("is-dark-mode");
+  }
+}
+
+function saveThemePreference() {
+  try {
+    window.localStorage.setItem("premierpedia-theme", state.isDarkMode ? "dark" : "light");
+  } catch (error) {
+    // Ignore storage restrictions.
+  }
+}
+
+function readFolderFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const folder = params.get("folder");
+    return folder ? normalizeFolderPath(folder) : "";
+  } catch (error) {
+    return "";
+  }
+}
+
+function syncCurrentFolderToUrl() {
+  const url = new URL(window.location.href);
+  if (state.currentFolder) {
+    url.searchParams.set("folder", state.currentFolder);
+  } else {
+    url.searchParams.delete("folder");
+  }
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  if (window.location.pathname + window.location.search !== nextUrl) {
+    window.history.replaceState({}, "", nextUrl);
+  }
+}
+
+function resolveFolderFromRepository(folderPath) {
+  const normalized = ensureSafeFolderPath(folderPath);
+  if (!normalized) return "";
+  const segments = normalized.split("/");
+  for (let index = segments.length; index >= 1; index -= 1) {
+    const candidate = segments.slice(0, index).join("/");
+    if (state.items.some((item) => item.kind === "folder" && item.relativePath === candidate)) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  applySavedTheme();
+  state.currentFolder = readFolderFromUrl();
   bindEvents();
-  refreshRepository();
+  refreshRepository({ preserveFolder: true });
 });
 
 function bindEvents() {
@@ -100,7 +168,16 @@ function bindEvents() {
   ui.pathForward.addEventListener("click", navigateHistoryForward);
   ui.themeToggle.addEventListener("click", toggleTheme);
   ui.demoSignIn.addEventListener("click", toggleDemoAdmin);
+  ui.move.addEventListener("click", () => {
+    if (!state.isDemoAdmin) return;
+    beginMoveSelection();
+    render();
+  });
   ui.moveHere.addEventListener("click", handleMoveSelected);
+  ui.cancelMoveMeta.addEventListener("click", () => {
+    cancelPendingMove();
+    render();
+  });
   ui.createFolder.addEventListener("click", handleCreateFolder);
   ui.upload.addEventListener("click", toggleUploadMenu);
   ui.uploadMenu.addEventListener("click", (event) => {
@@ -108,10 +185,24 @@ function bindEvents() {
     if (!button) return;
     const isFolder = button === ui.uploadFolderMenu;
     ui.uploadMenu.hidden = true;
+    ui.upload.setAttribute("aria-expanded", "false");
     if (isFolder) ui.folderInput.click();
     else ui.fileInput.click();
   });
-  ui.uploadFolder.addEventListener("click", () => ui.folderInput.click());
+  ui.uploadMenu.addEventListener("keydown", (event) => {
+    const menuItems = [...ui.uploadMenu.querySelectorAll("button")];
+    const focusedIndex = menuItems.indexOf(document.activeElement);
+    if (event.key === "Escape") {
+      ui.uploadMenu.hidden = true;
+      ui.upload.setAttribute("aria-expanded", "false");
+      ui.upload.focus();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = (focusedIndex + direction + menuItems.length) % menuItems.length;
+      menuItems[nextIndex].focus();
+    }
+  });
   ui.downloadSelected.addEventListener("click", handleDownloadSelected);
   ui.fileInput.addEventListener("change", (event) => handleUpload(event, false));
   ui.folderInput.addEventListener("change", (event) => handleUpload(event, true));
@@ -123,12 +214,15 @@ function bindEvents() {
     renderActivity();
   });
   ui.cancelMove.addEventListener("click", () => {
-    state.pendingMove = null;
+    cancelPendingMove();
     ui.moveConfirmation.close();
+    render();
   });
   ui.confirmMove.addEventListener("click", confirmPendingMove);
   ui.moveConfirmation.addEventListener("close", () => {
-    state.pendingMove = null;
+    if (state.pendingMove && !state.pendingMove.confirmed) {
+      state.pendingMove = null;
+    }
   });
 
   ui.rows.addEventListener("change", (event) => {
@@ -271,12 +365,13 @@ function bindEvents() {
 function navigateToFolder(path) {
   clearDragStyles();
   if (ui.moveConfirmation.open) ui.moveConfirmation.close();
-  state.currentFolder = path;
+  state.currentFolder = ensureSafeFolderPath(path);
   state.searchTerm = "";
   ui.search.value = "";
   state.fileFilter = "folder";
   ui.fileFilter.value = "folder";
   if (!state.selected.size) state.selectionFolder = null;
+  syncCurrentFolderToUrl();
   render();
 }
 
@@ -287,14 +382,15 @@ function toggleDemoAdmin() {
   ui.demoSignIn.setAttribute("aria-pressed", String(state.isDemoAdmin));
   ui.createFolder.hidden = !state.isDemoAdmin;
   ui.upload.hidden = !state.isDemoAdmin;
-  ui.uploadFolder.hidden = !state.isDemoAdmin;
   ui.remove.hidden = !state.isDemoAdmin || state.selected.size === 0;
   render();
 }
 
 function toggleTheme() {
   state.isDarkMode = !state.isDarkMode;
+  document.documentElement.setAttribute("data-theme", state.isDarkMode ? "dark" : "light");
   document.body.classList.toggle("is-dark-mode", state.isDarkMode);
+  saveThemePreference();
   ui.themeToggle.setAttribute("aria-pressed", String(state.isDarkMode));
   const label = state.isDarkMode ? "Switch to light mode" : "Switch to dark mode";
   ui.themeToggle.setAttribute("aria-label", label);
@@ -373,17 +469,22 @@ function toggleUploadMenu(event) {
   if (!button || !menu) return;
   const shouldOpen = menu.hidden;
   menu.hidden = !shouldOpen;
+  button.setAttribute("aria-expanded", String(shouldOpen));
   if (shouldOpen) {
     const rect = button.getBoundingClientRect();
     menu.style.position = "absolute";
     menu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 100)}px`;
     menu.style.left = `${Math.max(8, rect.left)}px`;
+    if (event.detail === 0) ui.uploadFilesMenu.focus();
   }
 }
 
 document.addEventListener("click", (event) => {
   const isInsideUpload = event.target.closest("#uploadButton") || event.target.closest("#uploadMenu");
-  if (!isInsideUpload) ui.uploadMenu.hidden = true;
+  if (!isInsideUpload) {
+    ui.uploadMenu.hidden = true;
+    ui.upload.setAttribute("aria-expanded", "false");
+  }
 });
 
 function beginMoveSelection() {
@@ -391,7 +492,15 @@ function beginMoveSelection() {
   if (!selectedRoots.length) return;
   state.pendingMove = {
     sourcePaths: selectedRoots.map((item) => item.relativePath),
-    sourceFolder: state.currentFolder
+    sourceItems: selectedRoots.map((item) => ({
+      id: item.relativePath,
+      path: item.relativePath,
+      parentPath: item.parentPath,
+      kind: item.kind,
+      name: item.name
+    })),
+    sourceFolder: state.currentFolder,
+    confirmed: false
   };
   clearOrdinarySelection();
 }
@@ -437,6 +546,8 @@ async function refreshRepository({ preserveFolder = false } = {}) {
       state.items.some((item) => item.relativePath === path)
     ));
     if (!state.selected.size) state.selectionFolder = null;
+    state.currentFolder = resolveFolderFromRepository(state.currentFolder) || "";
+    syncCurrentFolderToUrl();
     updateFolderSizes();
     if (state.navigationHistory.length === 0) {
       state.navigationHistory = [state.currentFolder];
@@ -591,6 +702,10 @@ function navigateToFolder(path, { skipHistory = false } = {}) {
   render();
 }
 
+function isNavigationEntry(item) {
+  return Boolean(item && item.isNavigationEntry);
+}
+
 function getVisibleItems() {
   if (state.searchTerm) {
     const matches = state.items.filter((item) => {
@@ -613,7 +728,8 @@ function getVisibleItems() {
       sha: null,
       path: `${DOCUMENTS_PATH}/${getParentFolderPath(state.currentFolder)}`.replace(/\/+$/, "") || DOCUMENTS_PATH,
       createdOn: null,
-      hasGitkeep: false
+      hasGitkeep: false,
+      isNavigationEntry: true
     };
     return sortItems([parentEntry, ...folderItems]);
   }
@@ -638,7 +754,6 @@ function renderNavigationState() {
   const canGoForward = state.navigationIndex < state.navigationHistory.length - 1;
   ui.pathBack.disabled = !canGoBack;
   ui.pathForward.disabled = !canGoForward;
-  ui.pathRefresh.disabled = false;
 }
 
 function renderFileFilters() {
@@ -729,7 +844,7 @@ function renderBreadcrumbs() {
 
   ui.breadcrumbs.innerHTML = crumbs.map((crumb, index) => {
     const current = index === crumbs.length - 1;
-    const label = crumb.path === "" ? `${crumb.label}/` : crumb.label;
+    const label = current ? `${crumb.label}/` : crumb.label;
     const button = `<button type="button" class="breadcrumb-button" data-folder-path="${escapeHtml(crumb.path)}"${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</button>`;
     return `${button}${current ? "" : '<span class="breadcrumb-separator">/</span>'}`;
   }).join("");
@@ -742,26 +857,39 @@ function renderRows(items) {
   ui.emptyMessage.textContent = state.searchTerm
     ? "No files match your search."
     : state.fileFilter !== "folder" ? "No files match this filter." : "No documents found.";
-  ui.itemCount.textContent = `${items.length} ${items.length === 1 ? "item" : "items"}`;
+  const hasSelection = state.selected.size > 0;
+  const selectedCount = [...state.selected].filter((path) =>
+    state.items.some((item) => item.relativePath === path && !isNavigationEntry(item))
+  ).length;
+  const visibleItemCount = items.filter((item) => !isNavigationEntry(item)).length;
+  ui.itemCount.textContent = state.pendingMove
+    ? "Items selected for moving"
+    : hasSelection
+      ? `${selectedCount} selected`
+      : `${visibleItemCount} ${visibleItemCount === 1 ? "item" : "items"}`;
   if (!items.length) return;
 
   const draggedRowPaths = new Set(state.draggedRowPaths);
   const selectionLocked = hasSelectionInAnotherFolder();
   const rows = items.map((item) => {
     const row = document.createElement("tr");
-    row.draggable = state.isDemoAdmin && !isGitHubPages && !selectionLocked;
+    row.draggable = !isNavigationEntry(item) && state.isDemoAdmin && !isGitHubPages && !selectionLocked;
     row.dataset.path = item.relativePath;
     if (item.kind === "folder") row.dataset.folderPath = item.relativePath;
     row.classList.toggle("is-dragging", draggedRowPaths.has(item.relativePath));
+
+    const isNavigationRow = isNavigationEntry(item);
     const checkboxCell = document.createElement("td");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.dataset.path = item.relativePath;
-    checkbox.checked = state.selected.has(item.relativePath);
-    checkbox.disabled = selectionLocked;
-    row.classList.toggle("is-selected", checkbox.checked);
-    checkbox.setAttribute("aria-label", `Select ${item.name}`);
-    checkboxCell.append(checkbox);
+    if (!isNavigationRow) {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.dataset.path = item.relativePath;
+      checkbox.checked = state.selected.has(item.relativePath);
+      checkbox.disabled = selectionLocked;
+      row.classList.toggle("is-selected", checkbox.checked);
+      checkbox.setAttribute("aria-label", `Select ${item.name}`);
+      checkboxCell.append(checkbox);
+    }
 
     const nameCell = document.createElement("td");
     nameCell.className = "name-cell";
@@ -776,7 +904,7 @@ function renderRows(items) {
       nameButton.setAttribute("aria-label", `${fileTypes.isBrowserOpenable(item.relativePath) ? "Open" : "Download"} ${item.name}`);
     }
     nameCell.append(nameButton);
-    if (state.isDemoAdmin && !selectionLocked) {
+    if (!isNavigationRow && state.isDemoAdmin && !selectionLocked) {
       const renameButton = document.createElement("button");
       renameButton.type = "button";
       renameButton.className = "inline-rename-button";
@@ -816,7 +944,7 @@ function renderRows(items) {
     }
     const actionCell = document.createElement("td");
     actionCell.className = "action-cell";
-    if (item.kind === "file") {
+    if (item.kind === "file" && !isNavigationRow && !hasSelection && !state.pendingMove) {
       const downloadLink = document.createElement("a");
       downloadLink.className = "download-button";
       downloadLink.href = getFileUrl(item.relativePath);
@@ -835,20 +963,24 @@ function renderRows(items) {
 }
 
 function renderSelectionState(items = getVisibleItems()) {
-  const selectedCount = items.filter((item) => state.selected.has(item.relativePath)).length;
+  const selectedCount = items.filter((item) => !isNavigationEntry(item) && state.selected.has(item.relativePath)).length;
   const selectedItems = [...state.selected]
     .map((path) => state.items.find((item) => item.relativePath === path))
-    .filter(Boolean);
+    .filter((item) => item && !isNavigationEntry(item));
   const selectionLocked = hasSelectionInAnotherFolder();
   const hasSelection = state.selected.size > 0;
   const selectedFiles = getDownloadTargets();
-  ui.selectAll.checked = items.length > 0 && selectedCount === items.length;
-  ui.selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
+  ui.selectAll.checked = items.length > 0 && selectedCount === items.filter((item) => !isNavigationEntry(item)).length;
+  ui.selectAll.indeterminate = selectedCount > 0 && selectedCount < items.filter((item) => !isNavigationEntry(item)).length;
   ui.selectAll.disabled = selectionLocked || Boolean(state.pendingMove);
   ui.remove.disabled = !hasSelection;
-  ui.selectionStatus.textContent = hasSelection ? `${state.selected.size} selected` : "";
+  //ui.selectionStatus.textContent = state.pendingMove ? "Items selected for moving" : hasSelection ? `${selectedCount} selected` : "";
   const canMove = state.isDemoAdmin && selectedItems.some((item) => canMoveItem(item, state.currentFolder));
   const destinationMode = Boolean(state.pendingMove) || (hasSelection && state.selectionFolder !== state.currentFolder);
+  const hasPendingMove = Boolean(state.pendingMove);
+  ui.move.hidden = !state.isDemoAdmin || !hasSelection || hasPendingMove || Boolean(selectionLocked);
+  ui.move.disabled = !selectedItems.length || !state.isDemoAdmin || isGitHubPages;
+  ui.cancelMoveMeta.hidden = !hasPendingMove;
   ui.moveHere.hidden = !canMove && !destinationMode;
   ui.moveHere.textContent = state.pendingMove ? "Move Here" : `Move Here (${state.selected.size})`;
   ui.moveHere.disabled = state.pendingMove ? isGitHubPages : !canMove || isGitHubPages;
@@ -857,16 +989,15 @@ function renderSelectionState(items = getVisibleItems()) {
     : `Move selected items into ${state.currentFolder || DOCUMENTS_PATH}`;
 
   const showPrimaryActions = !hasSelection && !state.pendingMove;
-  ui.createFolder.hidden = !state.isDemoAdmin || destinationMode;
+  ui.createFolder.hidden = !state.isDemoAdmin || hasSelection || destinationMode;
   ui.upload.hidden = !state.isDemoAdmin || !showPrimaryActions;
-  ui.uploadFolder.hidden = !state.isDemoAdmin || !showPrimaryActions;
   ui.downloadSelected.hidden = !selectedFiles.length || !hasSelection;
   ui.downloadSelected.disabled = !selectedFiles.length;
   ui.downloadSelected.title = selectedFiles.length > 1
     ? `Download ${selectedFiles.length} selected files as a ZIP`
     : "Download selected file";
-  ui.remove.hidden = !state.isDemoAdmin || !hasSelection || Boolean(state.pendingMove);
-  document.body.classList.toggle("is-selection-locked", selectionLocked || Boolean(state.pendingMove));
+  ui.remove.hidden = !state.isDemoAdmin || !hasSelection || hasPendingMove;
+  document.body.classList.toggle("is-selection-locked", selectionLocked || hasPendingMove);
 }
 
 function toggleSelectAll(event) {
@@ -897,7 +1028,6 @@ async function handleUpload(event, includeDirectoryPath = false) {
   ui.fileInput.value = "";
   ui.folderInput.value = "";
   ui.upload.disabled = true;
-  ui.uploadFolder.disabled = true;
   let uploaded = 0;
   const failures = [];
   try {
@@ -928,7 +1058,6 @@ async function handleUpload(event, includeDirectoryPath = false) {
     showToast(error.message);
   } finally {
     ui.upload.disabled = false;
-    ui.uploadFolder.disabled = false;
   }
 }
 
@@ -1020,12 +1149,14 @@ function getDownloadTargets() {
 }
 
 async function handleDownloadSelected() {
+  const selectedRoots = getSelectedRoots();
   const downloadable = getDownloadTargets();
-  if (!downloadable.length) {
+  const shouldZip = selectedRoots.some((item) => item.kind === "folder") || downloadable.length > 1;
+  if (!downloadable.length && !selectedRoots.some((item) => item.kind === "folder")) {
     showToast("Select a file or folder to download.");
     return;
   }
-  if (downloadable.length === 1) {
+  if (!shouldZip && downloadable.length === 1) {
     handleDownload(downloadable[0].relativePath, downloadable[0].name);
     return;
   }
@@ -1038,6 +1169,9 @@ async function handleDownloadSelected() {
 
   try {
     const zip = new window.JSZip();
+    for (const item of selectedRoots.filter((root) => root.kind === "folder" && !downloadable.some((file) => file.relativePath === root.relativePath || file.relativePath.startsWith(`${root.relativePath}/`)))) {
+      zip.folder(item.relativePath);
+    }
     for (const item of downloadable) {
       const response = await fetch(getFileUrl(item.relativePath));
       if (!response.ok) throw new Error(`Download failed for ${item.name} (${response.status}).`);
@@ -1052,7 +1186,7 @@ async function handleDownloadSelected() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    showToast(`Downloaded ${downloadable.length} files as a ZIP.`);
+    showToast(`Downloaded ${downloadable.length || selectedRoots.length} item${(downloadable.length || selectedRoots.length) === 1 ? "" : "s"} as a ZIP.`);
   } catch (error) {
     console.error(error);
     showToast(error.message);
@@ -1290,7 +1424,7 @@ async function handleRemoveSelected() {
 function getSelectedItems() {
   return [...state.selected]
     .map((path) => state.items.find((item) => item.relativePath === path))
-    .filter(Boolean);
+    .filter((item) => item && !isNavigationEntry(item));
 }
 
 function getSelectedRoots() {
