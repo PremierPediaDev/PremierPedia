@@ -24,7 +24,9 @@ const state = {
   isDemoAdmin: false,
   draggedPaths: [],
   draggedRowPaths: [],
-  pendingMove: null
+  pendingMove: null,
+  navigationHistory: [],
+  navigationIndex: -1
 };
 
 const ui = {
@@ -35,12 +37,17 @@ const ui = {
   itemCount: document.getElementById("itemCount"),
   selectionStatus: document.getElementById("selectionStatus"),
   refresh: document.getElementById("refreshButton"),
+  pathBack: document.getElementById("pathBackButton"),
+  pathForward: document.getElementById("pathForwardButton"),
   themeToggle: document.getElementById("themeToggleButton"),
   demoSignIn: document.getElementById("demoSignInButton"),
   moveHere: document.getElementById("moveHereButton"),
   createFolder: document.getElementById("createFolderButton"),
   upload: document.getElementById("uploadButton"),
   uploadFolder: document.getElementById("uploadFolderButton"),
+  uploadMenu: document.getElementById("uploadMenu"),
+  uploadFilesMenu: document.getElementById("uploadFilesMenuButton"),
+  uploadFolderMenu: document.getElementById("uploadFolderMenuButton"),
   downloadSelected: document.getElementById("downloadSelectedButton"),
   remove: document.getElementById("removeButton"),
   fileInput: document.getElementById("fileInput"),
@@ -88,12 +95,22 @@ function bindEvents() {
     renderHeaderSortState();
     render();
   });
-  ui.refresh.addEventListener("click", refreshRepository);
+  ui.refresh.addEventListener("click", () => refreshRepository({ preserveFolder: true }));
+  ui.pathBack.addEventListener("click", navigateHistoryBack);
+  ui.pathForward.addEventListener("click", navigateHistoryForward);
   ui.themeToggle.addEventListener("click", toggleTheme);
   ui.demoSignIn.addEventListener("click", toggleDemoAdmin);
   ui.moveHere.addEventListener("click", handleMoveSelected);
   ui.createFolder.addEventListener("click", handleCreateFolder);
-  ui.upload.addEventListener("click", () => ui.fileInput.click());
+  ui.upload.addEventListener("click", toggleUploadMenu);
+  ui.uploadMenu.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    const isFolder = button === ui.uploadFolderMenu;
+    ui.uploadMenu.hidden = true;
+    if (isFolder) ui.folderInput.click();
+    else ui.fileInput.click();
+  });
   ui.uploadFolder.addEventListener("click", () => ui.folderInput.click());
   ui.downloadSelected.addEventListener("click", handleDownloadSelected);
   ui.fileInput.addEventListener("change", (event) => handleUpload(event, false));
@@ -105,7 +122,10 @@ function bindEvents() {
     state.activity = null;
     renderActivity();
   });
-  ui.cancelMove.addEventListener("click", () => ui.moveConfirmation.close());
+  ui.cancelMove.addEventListener("click", () => {
+    state.pendingMove = null;
+    ui.moveConfirmation.close();
+  });
   ui.confirmMove.addEventListener("click", confirmPendingMove);
   ui.moveConfirmation.addEventListener("close", () => {
     state.pendingMove = null;
@@ -114,7 +134,8 @@ function bindEvents() {
   ui.rows.addEventListener("change", (event) => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") return;
-    if (input.disabled || (state.selected.size && state.selectionFolder !== state.currentFolder)) return;
+    if (input.disabled || state.pendingMove) return;
+    if (state.selected.size && state.selectionFolder !== state.currentFolder && !state.searchTerm && state.fileFilter === "folder") return;
 
     if (input.checked) {
       if (!state.selected.size) state.selectionFolder = state.currentFolder;
@@ -123,6 +144,12 @@ function bindEvents() {
     else state.selected.delete(input.dataset.path);
     if (!state.selected.size) state.selectionFolder = null;
     render();
+  });
+
+  ui.breadcrumbs.addEventListener("click", (event) => {
+    const breadcrumb = event.target.closest("[data-folder-path]");
+    if (!breadcrumb) return;
+    navigateToFolder(breadcrumb.dataset.folderPath);
   });
 
   ui.rows.addEventListener("click", (event) => {
@@ -277,6 +304,122 @@ function toggleTheme() {
     : '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 
+function normalizeFolderPath(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const sanitized = String(value).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+  if (!sanitized) return "";
+  const segments = sanitized.split("/").filter((segment) => segment && segment !== "." && segment !== "..");
+  const normalized = segments.join("/");
+  return normalized === DOCUMENTS_PATH ? "" : normalized.startsWith(`${DOCUMENTS_PATH}/`) ? normalized.slice(DOCUMENTS_PATH.length + 1) : normalized;
+}
+
+function getParentFolderPath(folderPath = state.currentFolder) {
+  const normalized = normalizeFolderPath(folderPath);
+  if (!normalized) return "";
+  const segments = normalized.split("/");
+  segments.pop();
+  return segments.join("/");
+}
+
+function getDisplayFolderPath(folderPath = state.currentFolder) {
+  const normalized = normalizeFolderPath(folderPath);
+  return normalized ? `${DOCUMENTS_PATH}/${normalized}/` : `${DOCUMENTS_PATH}/`;
+}
+
+function ensureSafeFolderPath(folderPath) {
+  const normalized = normalizeFolderPath(folderPath);
+  if (!normalized) return "";
+  const path = normalized.split("/").filter(Boolean).join("/");
+  if (!path || path === "." || path === "..") return "";
+  return path;
+}
+
+function recordNavigation(folderPath) {
+  const normalized = ensureSafeFolderPath(folderPath);
+  const history = state.navigationHistory;
+  const previous = history[state.navigationIndex];
+  if (previous === normalized) return;
+  state.navigationHistory = history.slice(0, state.navigationIndex + 1);
+  state.navigationHistory.push(normalized);
+  state.navigationIndex = state.navigationHistory.length - 1;
+}
+
+function navigateHistoryBack() {
+  const previousFolder = state.navigationHistory[state.navigationIndex - 1];
+  if (previousFolder !== undefined) {
+    state.navigationIndex -= 1;
+    navigateToFolder(previousFolder, { skipHistory: true });
+    return;
+  }
+  if (state.currentFolder) {
+    navigateToFolder(getParentFolderPath(state.currentFolder));
+  }
+}
+
+function navigateHistoryForward() {
+  if (state.navigationIndex >= state.navigationHistory.length - 1) return;
+  state.navigationIndex += 1;
+  navigateToFolder(state.navigationHistory[state.navigationIndex], { skipHistory: true });
+}
+
+function clearOrdinarySelection() {
+  state.selected.clear();
+  state.selectionFolder = null;
+}
+
+function toggleUploadMenu(event) {
+  const button = event.currentTarget;
+  const menu = ui.uploadMenu;
+  if (!button || !menu) return;
+  const shouldOpen = menu.hidden;
+  menu.hidden = !shouldOpen;
+  if (shouldOpen) {
+    const rect = button.getBoundingClientRect();
+    menu.style.position = "absolute";
+    menu.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 100)}px`;
+    menu.style.left = `${Math.max(8, rect.left)}px`;
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const isInsideUpload = event.target.closest("#uploadButton") || event.target.closest("#uploadMenu");
+  if (!isInsideUpload) ui.uploadMenu.hidden = true;
+});
+
+function beginMoveSelection() {
+  const selectedRoots = getRootItems(getSelectedItems());
+  if (!selectedRoots.length) return;
+  state.pendingMove = {
+    sourcePaths: selectedRoots.map((item) => item.relativePath),
+    sourceFolder: state.currentFolder
+  };
+  clearOrdinarySelection();
+}
+
+function cancelPendingMove() {
+  state.pendingMove = null;
+  clearOrdinarySelection();
+}
+
+function updateFolderSizes() {
+  const folderSizes = new Map();
+  const folders = state.items.filter((item) => item.kind === "folder");
+  for (const folder of folders) {
+    let total = 0;
+    for (const item of state.items) {
+      if (item.kind === "file" && item.parentPath === folder.relativePath) {
+        total += Number(item.size) || 0;
+      } else if (item.kind === "folder" && item.parentPath === folder.relativePath) {
+        total += folderSizes.get(item.relativePath) || 0;
+      }
+    }
+    folderSizes.set(folder.relativePath, total);
+  }
+  for (const folder of folders) {
+    folder.size = folderSizes.get(folder.relativePath) || 0;
+  }
+}
+
 async function refreshRepository({ preserveFolder = false } = {}) {
   clearDragStyles();
   ui.refresh.disabled = true;
@@ -285,11 +428,23 @@ async function refreshRepository({ preserveFolder = false } = {}) {
     const repository = await fetchRepositoryItems();
     state.items = repository.items;
     renderFileFilters();
-    if (!preserveFolder) state.currentFolder = "";
+    if (!preserveFolder) {
+      state.currentFolder = "";
+      state.navigationHistory = [""];
+      state.navigationIndex = 0;
+    }
     state.selected = new Set([...state.selected].filter((path) =>
       state.items.some((item) => item.relativePath === path)
     ));
     if (!state.selected.size) state.selectionFolder = null;
+    updateFolderSizes();
+    if (state.navigationHistory.length === 0) {
+      state.navigationHistory = [state.currentFolder];
+      state.navigationIndex = 0;
+    }
+    if (state.navigationHistory[state.navigationIndex] !== state.currentFolder) {
+      recordNavigation(state.currentFolder);
+    }
     render();
     hideToast();
     repository.createdDateErrors = await loadCreatedDates(state.items);
@@ -425,18 +580,46 @@ async function fetchJson(url) {
   return payload;
 }
 
+function navigateToFolder(path, { skipHistory = false } = {}) {
+  const nextFolder = ensureSafeFolderPath(path);
+  if (nextFolder === state.currentFolder) return;
+  state.currentFolder = nextFolder;
+  if (!skipHistory) recordNavigation(nextFolder);
+  if (!state.pendingMove && state.selectionFolder !== null && state.selectionFolder !== state.currentFolder) {
+    clearOrdinarySelection();
+  }
+  render();
+}
+
 function getVisibleItems() {
   if (state.searchTerm) {
-    return sortItems(state.items.filter((item) => {
+    const matches = state.items.filter((item) => {
       if (item.kind !== "file" || !item.name.toLocaleLowerCase().includes(state.searchTerm)) return false;
       return state.fileFilter === "folder" || state.fileFilter === "all" || item.typeLabel === state.fileFilter;
-    }));
+    });
+    return sortItems(matches);
   }
 
-  const items = state.fileFilter === "folder"
-    ? state.items.filter((item) => item.parentPath === state.currentFolder)
-    : state.items.filter((item) => item.kind === "file" &&
-      (state.fileFilter === "all" || item.typeLabel === state.fileFilter));
+  if (state.fileFilter === "folder") {
+    const folderItems = state.items.filter((item) => item.parentPath === state.currentFolder);
+    if (!state.currentFolder) return sortItems(folderItems);
+    const parentEntry = {
+      name: "..",
+      relativePath: getParentFolderPath(state.currentFolder),
+      parentPath: getParentFolderPath(getParentFolderPath(state.currentFolder)),
+      kind: "folder",
+      typeLabel: "Folder",
+      size: null,
+      sha: null,
+      path: `${DOCUMENTS_PATH}/${getParentFolderPath(state.currentFolder)}`.replace(/\/+$/, "") || DOCUMENTS_PATH,
+      createdOn: null,
+      hasGitkeep: false
+    };
+    return sortItems([parentEntry, ...folderItems]);
+  }
+
+  const items = state.items.filter((item) => item.kind === "file" &&
+    (state.fileFilter === "all" || item.typeLabel === state.fileFilter));
   return sortItems(items);
 }
 
@@ -444,9 +627,18 @@ function render() {
   const items = getVisibleItems();
   renderBreadcrumbs();
   renderHeaderSortState();
+  renderNavigationState();
   renderRows(items);
   renderSelectionState(items);
   renderActivity();
+}
+
+function renderNavigationState() {
+  const canGoBack = state.navigationIndex > 0 || Boolean(state.currentFolder);
+  const canGoForward = state.navigationIndex < state.navigationHistory.length - 1;
+  ui.pathBack.disabled = !canGoBack;
+  ui.pathForward.disabled = !canGoForward;
+  ui.pathRefresh.disabled = false;
 }
 
 function renderFileFilters() {
@@ -527,7 +719,7 @@ function compareNullable(left, right) {
 function renderBreadcrumbs() {
   const crumbs = [{ label: state.docsPath, path: "" }];
   if (state.currentFolder) {
-    const segments = state.currentFolder.split("/");
+    const segments = state.currentFolder.split("/").filter(Boolean);
     let path = "";
     for (const segment of segments) {
       path = path ? `${path}/${segment}` : segment;
@@ -537,9 +729,11 @@ function renderBreadcrumbs() {
 
   ui.breadcrumbs.innerHTML = crumbs.map((crumb, index) => {
     const current = index === crumbs.length - 1;
-    const button = `<button type="button" class="breadcrumb-button" data-folder-path="${escapeHtml(crumb.path)}"${current ? ' aria-current="page"' : ""}>${escapeHtml(crumb.label)}</button>`;
+    const label = crumb.path === "" ? `${crumb.label}/` : crumb.label;
+    const button = `<button type="button" class="breadcrumb-button" data-folder-path="${escapeHtml(crumb.path)}"${current ? ' aria-current="page"' : ""}>${escapeHtml(label)}</button>`;
     return `${button}${current ? "" : '<span class="breadcrumb-separator">/</span>'}`;
   }).join("");
+  ui.breadcrumbs.setAttribute("aria-label", `Current path: ${getDisplayFolderPath(state.currentFolder)}`);
 }
 
 function renderRows(items) {
@@ -607,7 +801,7 @@ function renderRows(items) {
 
     const sizeCell = document.createElement("td");
     sizeCell.className = "size-cell";
-    sizeCell.textContent = item.kind === "folder" ? "—" : formatSize(item.size);
+    sizeCell.textContent = item.kind === "folder" ? formatSize(item.size ?? 0) : formatSize(item.size);
     const createdOnCell = document.createElement("td");
     createdOnCell.className = "created-on-cell";
     const dateValue = formatDateTime(item.createdOn);
@@ -650,37 +844,39 @@ function renderSelectionState(items = getVisibleItems()) {
   const selectedFiles = getDownloadTargets();
   ui.selectAll.checked = items.length > 0 && selectedCount === items.length;
   ui.selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
-  ui.selectAll.disabled = selectionLocked;
+  ui.selectAll.disabled = selectionLocked || Boolean(state.pendingMove);
   ui.remove.disabled = !hasSelection;
   ui.selectionStatus.textContent = hasSelection ? `${state.selected.size} selected` : "";
   const canMove = state.isDemoAdmin && selectedItems.some((item) => canMoveItem(item, state.currentFolder));
-  const destinationMode = hasSelection && state.selectionFolder !== state.currentFolder;
+  const destinationMode = Boolean(state.pendingMove) || (hasSelection && state.selectionFolder !== state.currentFolder);
   ui.moveHere.hidden = !canMove && !destinationMode;
-  ui.moveHere.textContent = `Move Here (${state.selected.size})`;
-  ui.moveHere.disabled = !canMove || isGitHubPages;
+  ui.moveHere.textContent = state.pendingMove ? "Move Here" : `Move Here (${state.selected.size})`;
+  ui.moveHere.disabled = state.pendingMove ? isGitHubPages : !canMove || isGitHubPages;
   ui.moveHere.title = isGitHubPages
     ? "Moving files requires the optional write-enabled API server."
     : `Move selected items into ${state.currentFolder || DOCUMENTS_PATH}`;
 
+  const showPrimaryActions = !hasSelection && !state.pendingMove;
   ui.createFolder.hidden = !state.isDemoAdmin || destinationMode;
-  ui.upload.hidden = !state.isDemoAdmin || destinationMode;
-  ui.uploadFolder.hidden = !state.isDemoAdmin || destinationMode;
-  ui.downloadSelected.hidden = !selectedFiles.length || selectionLocked;
+  ui.upload.hidden = !state.isDemoAdmin || !showPrimaryActions;
+  ui.uploadFolder.hidden = !state.isDemoAdmin || !showPrimaryActions;
+  ui.downloadSelected.hidden = !selectedFiles.length || !hasSelection;
   ui.downloadSelected.disabled = !selectedFiles.length;
   ui.downloadSelected.title = selectedFiles.length > 1
     ? `Download ${selectedFiles.length} selected files as a ZIP`
     : "Download selected file";
-  ui.remove.hidden = !state.isDemoAdmin || destinationMode || !hasSelection;
-  document.body.classList.toggle("is-selection-locked", selectionLocked);
+  ui.remove.hidden = !state.isDemoAdmin || !hasSelection || Boolean(state.pendingMove);
+  document.body.classList.toggle("is-selection-locked", selectionLocked || Boolean(state.pendingMove));
 }
 
 function toggleSelectAll(event) {
-  if (hasSelectionInAnotherFolder()) {
+  if (state.pendingMove || hasSelectionInAnotherFolder()) {
     event.target.checked = false;
     return;
   }
   if (event.target.checked && !state.selected.size) state.selectionFolder = state.currentFolder;
   for (const item of getVisibleItems()) {
+    if (item.name === "..") continue;
     if (event.target.checked) state.selected.add(item.relativePath);
     else state.selected.delete(item.relativePath);
   }
@@ -807,13 +1003,18 @@ function getDownloadTargets() {
       continue;
     }
     for (const candidate of state.items) {
-      if (candidate.kind === "file" && candidate.relativePath.startsWith(`${item.relativePath}/`)) {
+      if (candidate.kind !== "file") continue;
+      if (candidate.relativePath === item.relativePath) {
+        filePaths.add(candidate.relativePath);
+        continue;
+      }
+      if (candidate.relativePath.startsWith(`${item.relativePath}/`)) {
         filePaths.add(candidate.relativePath);
       }
     }
   }
   return [...filePaths]
-    .map((path) => state.items.find((item) => item.relativePath === path))
+    .map((path) => state.items.find((entry) => entry.relativePath === path))
     .filter(Boolean)
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
@@ -859,6 +1060,22 @@ async function handleDownloadSelected() {
 }
 
 async function handleMoveSelected() {
+  if (state.pendingMove) {
+    const destination = state.currentFolder;
+    const movable = getMovableItems(state.pendingMove.sourcePaths, destination);
+    if (!movable.length) {
+      showToast("Choose a valid destination folder for the selected items.");
+      return;
+    }
+    if (isGitHubPages) {
+      showToast("Moving files requires the optional write-enabled API server; GitHub Pages is static and read-only.");
+      return;
+    }
+    const pending = state.pendingMove;
+    state.pendingMove = null;
+    return moveItems(pending.sourcePaths, destination);
+  }
+
   const movable = getRootItems(getSelectedItems())
     .filter((item) => canMoveItem(item, state.currentFolder));
   if (!movable.length) return;
@@ -867,7 +1084,8 @@ async function handleMoveSelected() {
     return;
   }
 
-  return moveItems(movable.map((item) => item.relativePath), state.currentFolder);
+  beginMoveSelection();
+  render();
 }
 
 async function moveItems(paths, destination) {
@@ -1080,8 +1298,7 @@ function getSelectedRoots() {
 }
 
 function hasSelectionInAnotherFolder() {
-  return Boolean(state.searchTerm) || state.fileFilter !== "folder" ||
-    (state.selected.size > 0 && state.selectionFolder !== state.currentFolder);
+  return Boolean(state.pendingMove) || (state.selected.size > 0 && state.selectionFolder !== null && state.selectionFolder !== state.currentFolder);
 }
 
 function getRootItems(items) {

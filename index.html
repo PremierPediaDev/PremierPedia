@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="PremierPedia document repository" />
     <title>PremierPedia</title>
+    <link rel="icon" href="https://premierinc.com/favicon.ico" />
     <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
@@ -25,12 +26,6 @@
             </div>
           </div>
           <span class="header-separator" aria-hidden="true">|</span>
-          <button id="refreshButton" class="header-icon-button" type="button" aria-label="Refresh documents" title="Refresh documents">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-              <path d="M20 11a8 8 0 1 1-2.34-5.66L20 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M20 4v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
         </div>
         <div class="header-utilities">
           <button id="themeToggleButton" class="header-icon-button" type="button" aria-label="Switch to dark mode" title="Switch to dark mode" aria-pressed="false">
@@ -53,7 +48,7 @@
 
     <main class="shell">
       <section class="browser" aria-label="Documentation browser">
-        <div class="toolbar">
+        <div class="meta-row">
           <div class="toolbar-actions">
             <button id="moveHereButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Move selected items" title="Move selected items" hidden>Move Here</button>
             <button id="createFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Create new directory" title="Create new directory" hidden>
@@ -66,7 +61,7 @@
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span class="button-label">Upload Files</span>
+              <span class="button-label">Upload</span>
             </button>
             <button id="uploadFolderButton" class="button button-secondary" type="button" data-mobile-icon-only aria-label="Upload folder" title="Upload folder" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
@@ -78,21 +73,21 @@
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span class="button-label">Download Selected</span>
+              <span class="button-label">Download</span>
             </button>
             <button id="removeButton" class="button button-secondary danger" type="button" data-mobile-icon-only aria-label="Delete selected items" title="Delete selected items" hidden>
               <svg class="button-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                 <path d="M4.5 7h15M9 7V4.5h6V7m2.5 0-.8 13h-9.4L6.5 7m3.5 3v6m4-6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span class="button-label">Delete</span>
+              <span class="button-label">Remove</span>
             </button>
             <input id="fileInput" type="file" multiple hidden />
             <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
+            <div id="uploadMenu" class="upload-menu" hidden>
+              <button id="uploadFilesMenuButton" class="upload-menu-item" type="button">Upload files</button>
+              <button id="uploadFolderMenuButton" class="upload-menu-item" type="button">Upload folder</button>
+            </div>
           </div>
-        </div>
-
-        <div class="meta-row">
-          <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"></nav>
           <div class="meta-controls">
             <span id="selectionStatus" class="selection-status" aria-live="polite"></span>
             <label class="filter-control">
@@ -100,12 +95,30 @@
                 <path d="M4 5h16l-6.2 7.2v5.1l-3.6 1.8v-6.9L4 5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
               </svg>
               <select id="fileFilter" aria-label="Filter files">
-                <option value="folder">-- None --</option>
+                <option value="folder"></option>
                 <option value="all">All files</option>
               </select>
             </label>
             <span id="itemCount" class="item-count"></span>
           </div>
+        </div>
+
+        <div class="path-bar" aria-label="Navigation">
+          <div class="path-bar-actions">
+            <button id="pathBackButton" class="path-nav-button" type="button" aria-label="Go back" title="Go back">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m14.5 5-7 7 7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="pathForwardButton" class="path-nav-button" type="button" aria-label="Go forward" title="Go forward">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m9.5 5 7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="refreshButton" class="path-nav-button" type="button" aria-label="Refresh documents" title="Refresh documents">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <path d="M20 11a8 8 0 1 1-2.34-5.66L20 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M20 4v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current path"></nav>
         </div>
 
         <div class="table-wrap">

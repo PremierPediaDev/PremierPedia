@@ -11,6 +11,7 @@ const css = fs.readFileSync(path.join(root, "index.css"), "utf8");
 const javascript = fs.readFileSync(path.join(root, "index.js"), "utf8");
 
 test("static site resolves assets and repository data without a local API server", () => {
+  assert.match(html, /rel="icon" href="https:\/\/premierinc\.com\/favicon\.ico"/);
   assert.match(html, /href="\.\/index\.css"/);
   assert.match(html, /src="\.\/file-types\.js"/);
   assert.match(html, /src="\.\/index\.js"/);
@@ -29,11 +30,11 @@ test("SVGs retain bounded default sizing if an icon class rule is missing", () =
   assert.match(css, /\.button-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/s);
 });
 
-test("header contains compact search, refresh, theme toggle, and sign-in controls", () => {
+test("header contains compact search, theme toggle, and sign-in controls", () => {
   const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
   assert.match(header, /class="brand-wordmark">PremierPedia/);
   assert.match(header, /id="searchInput"[^>]*placeholder="Search files"/);
-  assert.match(header, /id="refreshButton"/);
+  assert.doesNotMatch(header, /id="refreshButton"/);
   assert.match(header, /id="themeToggleButton"[^>]*aria-pressed="false"/);
   assert.match(header, /class="header-sign-in-label">Sign in/);
   assert.match(header, /class="header-utilities"/);
@@ -42,6 +43,18 @@ test("header contains compact search, refresh, theme toggle, and sign-in control
   assert.match(javascript, /function toggleTheme\(\)/);
   assert.match(javascript, /document\.body\.classList\.toggle\("is-dark-mode", state\.isDarkMode\)/);
   assert.match(css, /body\.is-dark-mode\s*\{/);
+});
+
+test("navigation bar has icon-only history and a single refresh control", () => {
+  const navigation = html.slice(html.indexOf("class=\"path-bar\""), html.indexOf("<div class=\"table-wrap\""));
+  assert.match(navigation, /id="pathBackButton"[^>]*aria-label="Go back"[\s\S]*?<svg/);
+  assert.match(navigation, /id="pathForwardButton"[^>]*aria-label="Go forward"[\s\S]*?<svg/);
+  assert.match(navigation, /id="refreshButton"[^>]*aria-label="Refresh documents"[\s\S]*?<svg/);
+  assert.doesNotMatch(navigation, />\s*(Back|Forward|Refresh)\s*</);
+  assert.equal((html.match(/id="refreshButton"/g) || []).length, 1);
+  assert.doesNotMatch(html, /id="pathRefreshButton"/);
+  assert.match(css, /\.breadcrumbs\s*\{[^}]*border-radius:\s*20px;[^}]*background:\s*var\(--panel\);/s);
+  assert.match(javascript, /ui\.refresh\.addEventListener\("click", \(\) => refreshRepository\(\{ preserveFolder: true \}\)\)/);
 });
 
 test("file links open displayable formats safely and download other types", () => {

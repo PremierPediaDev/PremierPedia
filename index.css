@@ -275,6 +275,35 @@ main.shell {
   gap: 7px;
 }
 
+.upload-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.upload-menu-item {
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.upload-menu-item:hover,
+.upload-menu-item:focus-visible {
+  background: var(--secondary);
+  outline: none;
+}
+
 .button-icon {
   flex: 0 0 auto;
   width: 16px;
@@ -340,6 +369,50 @@ body:not(.is-demo-admin) .file-table tbody td:first-child {
   background: #fafcfe;
 }
 
+.path-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+  background: #f4f8fb;
+}
+
+.path-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.path-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.path-nav-button:hover {
+  background: var(--secondary);
+  color: var(--text);
+}
+
+.path-nav-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.path-nav-button svg {
+  width: 20px;
+  height: 20px;
+}
+
 .meta-controls {
   display: flex;
   align-items: center;
@@ -367,8 +440,8 @@ body:not(.is-demo-admin) .file-table tbody td:first-child {
 }
 
 .filter-control select {
-  max-width: 190px;
-  min-width: 104px;
+  max-width: 70px;
+  min-width: 0px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -380,14 +453,28 @@ body:not(.is-demo-admin) .file-table tbody td:first-child {
 .breadcrumbs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 26px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--panel);
   color: var(--muted);
   font-size: 0.82rem;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.breadcrumbs::-webkit-scrollbar {
+  display: none;
 }
 
 .breadcrumb-button {
+  flex: 0 0 auto;
   border: none;
   background: transparent;
   padding: 0;
@@ -403,6 +490,7 @@ body:not(.is-demo-admin) .file-table tbody td:first-child {
 }
 
 .breadcrumb-separator {
+  flex: 0 0 auto;
   color: #7f93a2;
 }
 
@@ -807,7 +895,8 @@ body.is-dark-mode .site-header {
   background: #202e36;
 }
 
-body.is-dark-mode .meta-row {
+body.is-dark-mode .meta-row,
+body.is-dark-mode .path-bar {
   background: #1b2830;
 }
 

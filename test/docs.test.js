@@ -2,7 +2,15 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildItemsFromTree, getTypeLabel, validateRelativePath } = require("../lib/docs");
+const {
+  buildFolderSizeMap,
+  buildItemsFromTree,
+  getDisplayFolderPath,
+  getParentFolderPath,
+  getTypeLabel,
+  normalizeFolderPath,
+  validateRelativePath
+} = require("../lib/docs");
 const { getInlineContentType, normalizeDocsPath } = require("../server");
 const fileTypes = require("../file-types");
 
@@ -50,6 +58,28 @@ test("file type labels and safe relative-path validation work", () => {
 
 test("the renamed repository folder is a valid docs root", () => {
   assert.equal(normalizeDocsPath("PremierPedia"), "PremierPedia");
+});
+
+test("folder paths normalize without leading separators and support parent navigation", () => {
+  assert.equal(normalizeFolderPath("/PremierPedia/Documents/Reports"), "Documents/Reports");
+  assert.equal(normalizeFolderPath("Documents//Reports/"), "Documents/Reports");
+  assert.equal(getParentFolderPath("Documents/Reports"), "Documents");
+  assert.equal(getParentFolderPath("Documents"), "");
+  assert.equal(getDisplayFolderPath("Documents/Reports"), "PremierPedia/Documents/Reports/");
+  assert.equal(getDisplayFolderPath(""), "PremierPedia/");
+});
+
+test("folder sizes are computed from child file and folder metadata without double-counting", () => {
+  const items = [
+    { relativePath: "Documents", parentPath: "", kind: "folder" },
+    { relativePath: "Documents/Reports", parentPath: "Documents", kind: "folder" },
+    { relativePath: "Documents/report.pdf", parentPath: "Documents", kind: "file", size: 120 },
+    { relativePath: "Documents/Reports/guide.txt", parentPath: "Documents/Reports", kind: "file", size: 80 },
+    { relativePath: "Documents/Reports/extra.csv", parentPath: "Documents/Reports", kind: "file", size: 70 }
+  ];
+  const sizes = buildFolderSizeMap(items);
+  assert.equal(sizes.get("Documents"), 270);
+  assert.equal(sizes.get("Documents/Reports"), 150);
 });
 
 test("browser-safe file formats are served inline and unknown formats download", () => {
