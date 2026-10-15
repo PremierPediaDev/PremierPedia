@@ -60,6 +60,102 @@ test("commit timestamp supports nested and top-level GitHub commit payloads", ()
   assert.equal(getCommitDate({}), null);
 });
 
+test("upload API rejects existing file and folder names without writing", async (context) => {
+  const originalFetch = global.fetch;
+  const originalToken = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "test-write-token";
+  const tree = [
+    { path: `${DOCS_PATH}/Policies/File.txt`, type: "blob", size: 4, sha: "original-sha" },
+    { path: `${DOCS_PATH}/Policies/Shared Folder/.gitkeep`, type: "blob", size: 0, sha: "folder-marker" }
+  ];
+  const uploadedPaths = [];
+  global.fetch = async (url, options = {}) => {
+    const requestUrl = new URL(url);
+    if (requestUrl.pathname === "/repos/PremierPediaDev/PremierPedia") {
+      return new Response(JSON.stringify({ default_branch: "main" }));
+    }
+    if (requestUrl.pathname.endsWith("/git/trees/main")) {
+      return new Response(JSON.stringify({ tree: [...tree] }));
+    }
+    if (requestUrl.pathname.includes("/contents/") && options.method === "PUT") {
+      const uploadedPath = decodeURIComponent(requestUrl.pathname.split("/contents/")[1]);
+      const body = JSON.parse(options.body);
+      assert.equal(Object.hasOwn(body, "sha"), false, "upload requests must never replace an existing blob");
+      if (uploadedPath === `${DOCS_PATH}/Policies/Race.txt`) {
+        return new Response(JSON.stringify({ message: "A file already exists at this path." }), { status: 422 });
+      }
+      const size = Buffer.from(body.content, "base64").length;
+      uploadedPaths.push(uploadedPath);
+      tree.push({ path: uploadedPath, type: "blob", size, sha: `uploaded-${uploadedPaths.length}` });
+      return new Response(JSON.stringify({
+        content: { sha: `uploaded-${uploadedPaths.length}` },
+        commit: { sha: "upload-commit" }
+      }));
+    }
+    throw new Error(`Unexpected GitHub API request: ${options.method || "GET"} ${url}`);
+  };
+
+  const server = app.listen(0);
+  await once(server, "listening");
+  context.after(async () => {
+    global.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = originalToken;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  const url = `http://127.0.0.1:${server.address().port}/api/docs/files`;
+  const existingFile = await putJson(url, {
+    path: "Policies/File.txt",
+    contentBase64: Buffer.from("must not replace").toString("base64")
+  });
+  assert.equal(existingFile.status, 409);
+  assert.match((await existingFile.json()).error, /File\.txt.*already exists/);
+
+  const existingFolder = await putJson(url, {
+    path: "Policies/Shared Folder/Subfolder/first.txt",
+    directoryPath: "Policies/Shared Folder",
+    contentBase64: Buffer.from("must not upload folder contents").toString("base64")
+  });
+  assert.equal(existingFolder.status, 409);
+  assert.match((await existingFolder.json()).error, /Shared Folder.*already exists/);
+
+  const caseInsensitiveFile = await putJson(url, {
+    path: "Policies/file.TXT",
+    contentBase64: Buffer.from("must not create case-variant").toString("base64")
+  });
+  assert.equal(caseInsensitiveFile.status, 409);
+
+  const invalidDirectory = await putJson(url, {
+    path: "Policies/another.txt",
+    directoryPath: "Elsewhere",
+    contentBase64: Buffer.from("invalid folder mapping").toString("base64")
+  });
+  assert.equal(invalidDirectory.status, 400);
+
+  const newFile = await putJson(url, {
+    path: "Policies/New File.txt",
+    contentBase64: Buffer.from("new content").toString("base64")
+  });
+  assert.equal(newFile.status, 200);
+  assert.deepEqual(await newFile.json(), {
+    path: "Policies/New File.txt",
+    uploadedSize: 11,
+    sha: "uploaded-1",
+    commit: "upload-commit"
+  });
+  assert.deepEqual(uploadedPaths, [`${DOCS_PATH}/Policies/New File.txt`]);
+  assert.equal(tree.find((entry) => entry.path === `${DOCS_PATH}/Policies/File.txt`).size, 4);
+
+  const raceConflict = await putJson(url, {
+    path: "Policies/Race.txt",
+    contentBase64: Buffer.from("must not overwrite concurrent file").toString("base64")
+  });
+  assert.equal(raceConflict.status, 422);
+  assert.match((await raceConflict.json()).error, /already exists/);
+  assert.equal(tree.some((entry) => entry.path === `${DOCS_PATH}/Policies/Race.txt`), false);
+});
+
 test("move API creates one commit that removes source and adds destination paths", async (context) => {
   const originalFetch = global.fetch;
   const originalToken = process.env.GITHUB_TOKEN;
@@ -157,6 +253,49 @@ test("move API rejects moving a folder into itself", async (context) => {
   });
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /into itself/);
+});
+
+test("move API rejects case-insensitive file and folder name conflicts before committing", async (context) => {
+  const originalFetch = global.fetch;
+  const originalToken = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "test-write-token";
+  const requests = [];
+  global.fetch = async (url, options = {}) => {
+    const requestUrl = new URL(url);
+    requests.push({ path: requestUrl.pathname, method: options.method || "GET" });
+    if (requestUrl.pathname === "/repos/PremierPediaDev/PremierPedia") {
+      return new Response(JSON.stringify({ default_branch: "main" }));
+    }
+    if (requestUrl.pathname.endsWith("/git/trees/main")) {
+      return new Response(JSON.stringify({
+        tree: [
+          { path: `${DOCS_PATH}/source.txt`, type: "blob", mode: "100644", sha: "source-sha" },
+          { path: `${DOCS_PATH}/destination/SOURCE.TXT`, type: "blob", mode: "100644", sha: "existing-file-sha" },
+          { path: `${DOCS_PATH}/source-folder/child.txt`, type: "blob", mode: "100644", sha: "child-sha" },
+          { path: `${DOCS_PATH}/destination/source-folder/existing.txt`, type: "blob", mode: "100644", sha: "existing-folder-sha" }
+        ]
+      }));
+    }
+    throw new Error(`Unexpected GitHub API request: ${options.method || "GET"} ${url}`);
+  };
+  const server = app.listen(0);
+  await once(server, "listening");
+  context.after(async () => {
+    global.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = originalToken;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  });
+
+  const url = `http://127.0.0.1:${server.address().port}/api/docs/move`;
+  const fileConflict = await postJson(url, { paths: ["source.txt"], destination: "destination" });
+  assert.equal(fileConflict.status, 409);
+  assert.match((await fileConflict.json()).error, /already exists/);
+
+  const folderConflict = await postJson(url, { paths: ["source-folder"], destination: "destination" });
+  assert.equal(folderConflict.status, 409);
+  assert.match((await folderConflict.json()).error, /already exists/);
+  assert.equal(requests.some((request) => request.path.endsWith("/git/commits")), false);
 });
 
 test("rename API atomically renames a folder and its contents and rejects conflicts", async (context) => {
@@ -363,6 +502,24 @@ function postJson(url, payload) {
   return new Promise((resolve, reject) => {
     const request = http.request(url, {
       method: "POST",
+      headers: { "Content-Type": "application/json" }
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode,
+        json: async () => JSON.parse(Buffer.concat(chunks).toString("utf8"))
+      }));
+    });
+    request.on("error", reject);
+    request.end(JSON.stringify(payload));
+  });
+}
+
+function putJson(url, payload) {
+  return new Promise((resolve, reject) => {
+    const request = http.request(url, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" }
     }, (response) => {
       const chunks = [];

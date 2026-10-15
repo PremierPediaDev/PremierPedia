@@ -1128,6 +1128,24 @@ body.is-dark-mode .inline-rename-button:focus-visible {
   box-shadow: 0 16px 38px rgba(15, 38, 53, 0.2);
 }
 
+.upload-info {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 11;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(40vh, 320px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--danger);
+  font-size: 0.82rem;
+  white-space: pre-line;
+  box-shadow: 0 16px 30px rgba(15, 38, 53, 0.16);
+}
+
 .activity-panel.is-minimized {
   width: auto;
   max-width: min(520px, calc(100vw - 32px));
@@ -1453,5 +1471,21 @@ body.is-dark-mode .inline-rename-button:focus-visible {
   .activity-panel.is-minimized {
     width: calc(100vw - 20px);
     max-width: none;
+  }
+
+  .upload-info {
+    left: 10px;
+    right: 10px;
+    bottom: 82px;
+    width: auto;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 920px) {
+  .upload-info {
+    left: 16px;
+    right: 16px;
+    bottom: 88px;
+    width: auto;
   }
 }

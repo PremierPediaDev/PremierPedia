@@ -38,9 +38,9 @@ The API provides:
 - `GET /api/docs` — recursively lists files, derives nested folders from the Git tree, and includes each file and folder's latest commit date; an absent or empty `PremierPedia/` tree returns `{ "items": [] }`
 - `GET /api/docs/file?path=relative/path` — serves browser-displayable file types inline and downloads other types. Inline HTML and SVG responses are sandboxed.
 - `POST /api/docs/folders` — creates a folder. JSON body: `{ "path": "optional/parent/new-folder" }`
-- `PUT /api/docs/files` — creates or replaces a file. JSON body: `{ "path": "optional/subfolder/name.ext", "contentBase64": "..." }`
+- `PUT /api/docs/files` — creates a file only if its name is unused; returns `409 Conflict` if that file or folder already exists. Folder uploads include `directoryPath`, and the endpoint rejects the complete upload before writing if the directory name already exists. JSON body: `{ "path": "optional/subfolder/name.ext", "contentBase64": "...", "directoryPath": "optional/subfolder" }`
 - `POST /api/docs/rename` — renames one file or folder and its contents. JSON body: `{ "path": "folder/old-name", "name": "new-name" }`
-- `POST /api/docs/move` — atomically moves selected files or folders. JSON body: `{ "paths": ["folder/file.txt", "another.txt"], "destination": "target/folder" }`; use an empty destination for the `PremierPedia/` root.
+- `POST /api/docs/move` — atomically moves selected files or folders and returns `409 Conflict` if a file or folder with the destination name already exists. JSON body: `{ "paths": ["folder/file.txt", "another.txt"], "destination": "target/folder" }`; use an empty destination for the `PremierPedia/` root.
 - `DELETE /api/docs/files` — removes selected files or every file below selected folders. JSON body: `{ "paths": ["name.ext", "folder"] }`
 
 ## Tests

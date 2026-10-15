@@ -21,6 +21,7 @@ const state = {
   fileFilter: "folder",
   fileSort: "name-asc",
   activity: null,
+  uploadErrors: [],
   isDemoAdmin: false,
   draggedPaths: [],
   draggedRowPaths: [],
@@ -58,6 +59,7 @@ const ui = {
   emptyMessage: document.querySelector("#emptyState p"),
   toast: document.getElementById("toast"),
   activityPanel: document.getElementById("activityPanel"),
+  uploadInfo: document.getElementById("uploadInfo"),
   activityTitle: document.getElementById("activityTitle"),
   activitySummary: document.getElementById("activitySummary"),
   activityItems: document.getElementById("activityItems"),
@@ -274,7 +276,7 @@ function bindEvents() {
     if (fileButton) {
       const path = fileButton.dataset.filePath;
       if (fileTypes.isBrowserOpenable(path, fileButton.dataset.mimeType)) {
-        window.open(getFileUrl(path), "_blank", "noopener,noreferrer");
+        window.open(getPreviewUrl(path), "_blank", "noopener,noreferrer");
       } else {
         handleDownload(path, fileButton.dataset.fileName);
       }
@@ -513,19 +515,32 @@ function cancelPendingMove() {
 function updateFolderSizes() {
   const folderSizes = new Map();
   const folders = state.items.filter((item) => item.kind === "folder");
-  for (const folder of folders) {
-    let total = 0;
-    for (const item of state.items) {
-      if (item.kind === "file" && item.parentPath === folder.relativePath) {
-        total += Number(item.size) || 0;
-      } else if (item.kind === "folder" && item.parentPath === folder.relativePath) {
-        total += folderSizes.get(item.relativePath) || 0;
-      }
+
+  const directFileSizes = new Map();
+  const childFolders = new Map();
+  for (const item of state.items) {
+    if (item.kind === "file") {
+      directFileSizes.set(
+        item.parentPath,
+        (directFileSizes.get(item.parentPath) || 0) + (Number(item.size) || 0)
+      );
+    } else if (item.kind === "folder") {
+      const children = childFolders.get(item.parentPath) || [];
+      children.push(item.relativePath);
+      childFolders.set(item.parentPath, children);
     }
-    folderSizes.set(folder.relativePath, total);
   }
+
+  const getFolderSize = (folderPath) => {
+    if (folderSizes.has(folderPath)) return folderSizes.get(folderPath);
+    const total = (directFileSizes.get(folderPath) || 0) +
+      (childFolders.get(folderPath) || []).reduce((size, childPath) => size + getFolderSize(childPath), 0);
+    folderSizes.set(folderPath, total);
+    return total;
+  };
+
   for (const folder of folders) {
-    folder.size = folderSizes.get(folder.relativePath) || 0;
+    folder.size = getFolderSize(folder.relativePath);
   }
 }
 
@@ -1025,6 +1040,15 @@ async function handleUpload(event, includeDirectoryPath = false) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
 
+  const folderRoot = includeDirectoryPath ? files[0].webkitRelativePath.split("/")[0] : null;
+  try {
+    assertNoUploadCollision(files, includeDirectoryPath, folderRoot);
+  } catch (error) {
+    reportUploadError(error.message);
+    event.target.value = "";
+    return;
+  }
+
   beginActivity("Uploading files", files.map((file) => ({
     name: includeDirectoryPath ? file.webkitRelativePath : file.name,
     status: "Waiting",
@@ -1040,14 +1064,26 @@ async function handleUpload(event, includeDirectoryPath = false) {
     for (const [index, file] of files.entries()) {
       const filePath = includeDirectoryPath ? file.webkitRelativePath : file.name;
       const path = [state.currentFolder, filePath].filter(Boolean).join("/");
+      const directoryPath = includeDirectoryPath && index === 0
+        ? [state.currentFolder, folderRoot].filter(Boolean).join("/")
+        : null;
       updateActivity(index, { status: "Uploading", progress: 0 });
       try {
-        await uploadFile(path, file, (progress) => updateActivity(index, { progress }));
+        const result = await uploadFile(path, file, (progress) => updateActivity(index, { progress }), directoryPath);
         uploaded += 1;
         updateActivity(index, { status: "Uploaded", progress: 100 });
       } catch (error) {
         failures.push({ file: file.name, error });
         updateActivity(index, { status: `Failed: ${error.message}`, progress: 0 });
+        reportUploadError(`Could not upload "${file.name}": ${error.message}`);
+        if (includeDirectoryPath) {
+          for (const pendingIndex of files.keys()) {
+            if (pendingIndex > index) updateActivity(pendingIndex, { status: "Not uploaded", progress: 0 });
+          }
+          state.activity.summary = `Stopped folder upload after an error on ${file.name}.`;
+          renderActivity();
+          break;
+        }
       }
       state.activity.summary = `Processed ${index + 1} of ${files.length} files.`;
       renderActivity();
@@ -1061,10 +1097,59 @@ async function handleUpload(event, includeDirectoryPath = false) {
     );
   } catch (error) {
     finishActivity("Upload Failed", error.message);
+    reportUploadError(`Upload failed: ${error.message}`);
     showToast(error.message);
   } finally {
     ui.upload.disabled = false;
   }
+}
+
+function assertNoPathCollisions(paths, { operation, excludedPaths = [] }) {
+  const selectedPaths = new Set();
+  const excluded = excludedPaths.map((path) => path.toLowerCase());
+  for (const path of paths) {
+    const normalizedPath = path.toLowerCase();
+    if (selectedPaths.has(normalizedPath)) {
+      throw new Error(`Cannot ${operation} "${path.split("/").at(-1)}": the selected items contain duplicate names.`);
+    }
+    selectedPaths.add(normalizedPath);
+
+    const conflict = state.items.find((item) => {
+      const existingPath = item.relativePath.toLowerCase();
+      if (excluded.some((sourcePath) =>
+        existingPath === sourcePath || existingPath.startsWith(`${sourcePath}/`)
+      )) {
+        return false;
+      }
+      return existingPath === normalizedPath ||
+        existingPath.startsWith(`${normalizedPath}/`) ||
+        (item.kind === "file" && normalizedPath.startsWith(`${existingPath}/`));
+    });
+    if (conflict) {
+      throw new Error(`Cannot ${operation} "${path.split("/").at(-1)}": a file or folder with that name already exists.`);
+    }
+  }
+}
+
+function assertNoUploadCollision(files, includeDirectoryPath, folderRoot) {
+  const paths = files.map((file) => {
+    const filePath = includeDirectoryPath ? file.webkitRelativePath : file.name;
+    return [state.currentFolder, filePath].filter(Boolean).join("/");
+  });
+  if (includeDirectoryPath && folderRoot) {
+    paths.unshift([state.currentFolder, folderRoot].filter(Boolean).join("/"));
+  }
+  assertNoPathCollisions(paths, { operation: "upload" });
+}
+
+function reportUploadError(message) {
+  state.uploadErrors.push(message);
+  renderUploadInfo();
+}
+
+function renderUploadInfo() {
+  ui.uploadInfo.textContent = state.uploadErrors.join("\n");
+  ui.uploadInfo.hidden = !state.uploadErrors.length;
 }
 
 function beginActivity(title, items) {
@@ -1087,7 +1172,7 @@ function finishActivity(title, summary) {
   renderActivity();
 }
 
-async function uploadFile(path, file, onProgress) {
+async function uploadFile(path, file, onProgress, directoryPath = null) {
   if (isGitHubPages) {
     throw new Error("Uploads require the optional write-enabled API server; GitHub Pages is static and read-only.");
   }
@@ -1110,12 +1195,20 @@ async function uploadFile(path, file, onProgress) {
         reject(new Error(payload.error || `Upload failed (${request.status}).`));
         return;
       }
+      if (typeof payload.path !== "string" || !Number.isFinite(payload.uploadedSize)) {
+        reject(new Error("Upload API returned an outdated response. Update or restart the write-enabled server, then retry."));
+        return;
+      }
       resolve(payload);
     });
     request.addEventListener("error", () => reject(new Error("Network error while uploading the file.")));
     request.addEventListener("abort", () => reject(new Error("File upload was interrupted.")));
     fileToBase64(file)
-      .then((contentBase64) => request.send(JSON.stringify({ path, contentBase64 })))
+      .then((contentBase64) => request.send(JSON.stringify({
+        path,
+        contentBase64,
+        ...(directoryPath ? { directoryPath } : {})
+      })))
       .catch(reject);
   });
 }
@@ -1237,12 +1330,19 @@ async function moveItems(paths, destination) {
   }
 
   const itemPaths = movable.map((item) => item.relativePath);
+  const destinationPaths = movable.map((item) =>
+    [destination, item.name].filter(Boolean).join("/")
+  );
   beginActivity("Moving files", movable.map((item) => ({
     name: item.relativePath,
     status: "Waiting",
     progress: 0
   })));
   try {
+    assertNoPathCollisions(destinationPaths, {
+      operation: "move",
+      excludedPaths: itemPaths
+    });
     movable.forEach((_item, index) => updateActivity(index, { status: "Preparing", progress: 35 }));
     state.activity.summary = `Preparing ${movable.length} selected item${movable.length === 1 ? "" : "s"}...`;
     renderActivity();
@@ -1294,9 +1394,11 @@ function applyLocalMove(roots, destination) {
     item.kind !== "folder" || item.hasGitkeep ||
     movedItems.some((candidate) => candidate.relativePath.startsWith(`${item.relativePath}/`))
   );
+  updateFolderSizes();
 }
 
 function renderActivity() {
+  renderUploadInfo();
   if (!state.activity) {
     ui.activityPanel.hidden = true;
     ui.activityItems.replaceChildren();
@@ -1318,7 +1420,7 @@ function renderActivity() {
     name.textContent = item.name;
     name.title = item.name;
     const status = document.createElement("span");
-    status.className = `activity-item-status${item.status.startsWith("Failed") ? " is-error" : item.status === "Uploaded" ? " is-done" : ""}`;
+    status.className = `activity-item-status${item.status.startsWith("Failed") ? " is-error" : item.status.startsWith("Uploaded") ? " is-done" : ""}`;
     status.textContent = item.status;
     description.append(name, status);
     row.append(description);
@@ -1561,6 +1663,14 @@ async function handleDownload(path, filename) {
 function getFileUrl(relativePath) {
   const path = `${DOCUMENTS_PATH}/${relativePath}`.split("/").map(encodeURIComponent).join("/");
   return `${RAW_GITHUB}/${REPOSITORY_OWNER}/${REPOSITORY_NAME}/${encodeURIComponent(REPOSITORY_BRANCH)}/${path}`;
+}
+
+function getPreviewUrl(relativePath) {
+  if (!isGitHubPages) {
+    return `/api/docs/file?path=${encodeURIComponent(relativePath)}`;
+  }
+  const path = `${DOCUMENTS_PATH}/${relativePath}`.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${REPOSITORY_OWNER}/${REPOSITORY_NAME}/blob/${encodeURIComponent(REPOSITORY_BRANCH)}/${path}`;
 }
 
 function folderIcon() {

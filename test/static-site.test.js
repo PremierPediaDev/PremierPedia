@@ -60,7 +60,9 @@ test("navigation bar has icon-only history and a single refresh control", () => 
 
 test("file links open displayable formats safely and download other types", () => {
   assert.match(javascript, /fileTypes\.isBrowserOpenable\(path, fileButton\.dataset\.mimeType\)/);
-  assert.match(javascript, /window\.open\(getFileUrl\(path\), "_blank", "noopener,noreferrer"\)/);
+  assert.match(javascript, /window\.open\(getPreviewUrl\(path\), "_blank", "noopener,noreferrer"\)/);
+  assert.match(javascript, /return `\/api\/docs\/file\?path=\$\{encodeURIComponent\(relativePath\)\}`/);
+  assert.match(javascript, /https:\/\/github\.com\/\$\{REPOSITORY_OWNER\}\/\$\{REPOSITORY_NAME\}\/blob\//);
   assert.match(javascript, /handleDownload\(path, fileButton\.dataset\.fileName\)/);
   assert.match(javascript, /return `\$\{RAW_GITHUB\}\/\$\{REPOSITORY_OWNER\}\/\$\{REPOSITORY_NAME\}/);
   assert.match(javascript, /fileIcon\(item\.name\)/);
@@ -90,6 +92,7 @@ test("move and folder upload controls preserve selection across navigation", () 
   assert.doesNotMatch(html, /id="uploadFolderButton"/);
   assert.doesNotMatch(javascript, /ui\.uploadFolder\./);
   assert.match(html, /id="folderInput"[^>]*webkitdirectory/);
+  assert.match(html, /id="uploadInfo" class="upload-info" role="alert" aria-live="assertive" hidden/);
   assert.match(html, /id="selectionStatus"/);
   assert.match(css, /\.file-table tbody tr\.is-selected/);
   assert.match(css, /\.activity-panel\.is-minimized \.activity-items\s*\{\s*display:\s*none;/);
@@ -97,6 +100,13 @@ test("move and folder upload controls preserve selection across navigation", () 
   assert.match(javascript, /finishActivity\("Files Moved"/);
   assert.match(javascript, /finishActivity\("Files Deleted"/);
   assert.match(javascript, /"Upload Completed"/);
+  assert.match(javascript, /assertNoUploadCollision\(files, includeDirectoryPath, folderRoot\)/);
+  assert.match(javascript, /assertNoPathCollisions\(paths, \{ operation: "upload" \}\)/);
+  assert.match(javascript, /assertNoPathCollisions\(destinationPaths, \{[\s\S]*operation: "move"/);
+  assert.match(javascript, /a file or folder with that name already exists/);
+  assert.match(javascript, /state\.uploadErrors\.push\(message\)/);
+  assert.match(javascript, /ui\.uploadInfo\.textContent = state\.uploadErrors\.join\("\\n"\)/);
+  assert.match(css, /\.upload-info\s*\{[^}]*position:\s*fixed;[^}]*left:\s*16px;[^}]*bottom:\s*16px;/s);
   assert.match(javascript, /async function handleRenameItem\(path\)/);
   assert.match(javascript, /className = "inline-rename-button"/);
   assert.match(javascript, /renameButton\.dataset\.renamePath = item\.relativePath/);
@@ -113,6 +123,19 @@ test("move and folder upload controls preserve selection across navigation", () 
   assert.match(javascript, /ui\.createFolder\.hidden = !state\.isDemoAdmin \|\| hasSelection \|\| destinationMode/);
   assert.match(javascript, /ui\.upload\.hidden = !state\.isDemoAdmin \|\| !showPrimaryActions/);
   assert.match(javascript, /event\.key === "Escape"/);
+});
+
+test("folder sizes are recalculated on load, refresh, and after upload", () => {
+  assert.match(javascript, /document\.addEventListener\("DOMContentLoaded",[\s\S]*?refreshRepository\(\{ preserveFolder: true \}\)/);
+  assert.match(javascript, /ui\.refresh\.addEventListener\("click", \(\) => refreshRepository\(\{ preserveFolder: true \}\)\)/);
+  assert.match(javascript, /function refreshRepository[\s\S]*?updateFolderSizes\(\)/);
+  assert.match(javascript, /async function handleUpload[\s\S]*?await refreshRepository\(\{ preserveFolder: true \}\)/);
+  const updateFolderSizes = javascript.slice(
+    javascript.indexOf("function updateFolderSizes()"),
+    javascript.indexOf("async function refreshRepository")
+  );
+  assert.match(updateFolderSizes, /const getFolderSize = \(folderPath\) =>/);
+  assert.match(updateFolderSizes, /getFolderSize\(childPath\)/);
 });
 
 test("meta row leads with compact filter controls and right-aligns actions", () => {

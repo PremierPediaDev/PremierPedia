@@ -104,34 +104,64 @@ app.get("/api/docs/file", async (request, response, next) => {
 
 app.put("/api/docs/files", requireGithubToken, async (request, response, next) => {
   try {
-    const relativePath = validateRelativePath(request.body?.path);
+    const requestedPath = validateRelativePath(request.body?.path);
+    const requestedDirectoryPath = request.body?.directoryPath === undefined
+      ? null
+      : validateRelativePath(request.body.directoryPath);
     const contentBase64 = request.body?.contentBase64;
     if (typeof contentBase64 !== "string" || !isBase64(contentBase64)) {
       throw new HttpError(400, "File content must be provided as valid base64.");
     }
-
-    const fullPath = `${DOCS_PATH}/${relativePath}`;
-    const branch = await getBranch();
-    const urlPath = encodeGithubPath(fullPath);
-    let existingSha;
-    try {
-      const existing = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/contents/${urlPath}?ref=${encodeURIComponent(branch)}`);
-      existingSha = existing.sha;
-    } catch (error) {
-      if (!(error instanceof HttpError) || error.status !== 404) throw error;
+    if (requestedDirectoryPath &&
+      !requestedPath.toLowerCase().startsWith(`${requestedDirectoryPath.toLowerCase()}/`)) {
+      throw new HttpError(400, "The upload directory must be a parent folder of the file path.");
     }
 
+    const branch = await getBranch();
+    const treeData = await githubRequest(
+      `/repos/${OWNER}/${REPOSITORY}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    if (treeData.truncated) {
+      throw new HttpError(502, "GitHub returned an incomplete repository tree.");
+    }
+    const tree = treeData.tree || [];
+    const requestedFullPath = `${DOCS_PATH}/${requestedPath}`;
+    const pathSegments = requestedPath.split("/");
+    const parentPaths = pathSegments.slice(0, -1).map((_segment, index) =>
+      `${DOCS_PATH}/${pathSegments.slice(0, index + 1).join("/")}`.toLowerCase()
+    );
+    if (tree.some((entry) => entry.type === "blob" && parentPaths.includes(entry.path.toLowerCase()))) {
+      throw new HttpError(409, "A file exists where a parent folder is required.");
+    }
+    const pathExists = (fullPath) => tree.some((entry) => {
+      const entryPath = entry.path.toLowerCase();
+      const targetPath = fullPath.toLowerCase();
+      return entryPath === targetPath || entryPath.startsWith(`${targetPath}/`);
+    });
+    if (requestedDirectoryPath && pathExists(`${DOCS_PATH}/${requestedDirectoryPath}`)) {
+      throw new HttpError(409, `A file or folder named "${requestedDirectoryPath.split("/").at(-1)}" already exists in the current directory.`);
+    }
+    if (pathExists(requestedFullPath)) {
+      throw new HttpError(409, `A file or folder named "${requestedPath.split("/").at(-1)}" already exists in the current directory.`);
+    }
+    const fullPath = `${DOCS_PATH}/${requestedPath}`;
+    const urlPath = encodeGithubPath(fullPath);
+    const uploadedSize = Buffer.byteLength(contentBase64, "base64");
     const result = await githubRequest(`/repos/${OWNER}/${REPOSITORY}/contents/${urlPath}`, {
       method: "PUT",
       body: {
-        message: `${existingSha ? "Update" : "Upload"} ${relativePath}`,
+        message: `Upload ${requestedPath}`,
         content: contentBase64,
-        branch,
-        ...(existingSha ? { sha: existingSha } : {})
+        branch
       }
     });
     invalidateCreatedOn(branch, fullPath);
-    response.json({ path: relativePath, sha: result.content?.sha, commit: result.commit?.sha });
+    response.json({
+      path: requestedPath,
+      uploadedSize,
+      sha: result.content?.sha,
+      commit: result.commit?.sha
+    });
   } catch (error) {
     next(error);
   }
@@ -212,7 +242,7 @@ app.post("/api/docs/move", requireGithubToken, async (request, response, next) =
       movingEntries.push(...entries);
     }
 
-    const movingPaths = new Set(movingEntries.map((entry) => entry.path));
+    const movingPaths = new Set(movingEntries.map((entry) => entry.path.toLowerCase()));
     const remappedEntries = [];
     const destinationPaths = new Set();
     for (const root of sourceRoots) {
@@ -223,14 +253,22 @@ app.post("/api/docs/move", requireGithubToken, async (request, response, next) =
       for (const entry of root.entries) {
         const suffix = entry.path.slice(root.source.length);
         const targetPath = `${targetRoot}${suffix}`;
-        if (destinationPaths.has(targetPath)) throw new HttpError(409, "The selected items would produce duplicate destination paths.");
-        destinationPaths.add(targetPath);
-        const existingTarget = tree.find((candidate) => !movingPaths.has(candidate.path) && (
-          candidate.path === targetPath ||
-          targetPath.startsWith(`${candidate.path}/`) ||
-          candidate.path.startsWith(`${targetPath}/`)
-        ));
-        if (existingTarget) throw new HttpError(409, `A file already exists at ${targetPath.slice(DOCS_PATH.length + 1)}.`);
+        const normalizedTarget = targetPath.toLowerCase();
+        if (destinationPaths.has(normalizedTarget)) {
+          throw new HttpError(409, "The selected items would produce duplicate destination paths.");
+        }
+        destinationPaths.add(normalizedTarget);
+        const existingTarget = tree.find((candidate) => {
+          const normalizedCandidate = candidate.path.toLowerCase();
+          return !movingPaths.has(normalizedCandidate) && (
+            normalizedCandidate === normalizedTarget ||
+            normalizedTarget.startsWith(`${normalizedCandidate}/`) ||
+            normalizedCandidate.startsWith(`${normalizedTarget}/`)
+          );
+        });
+        if (existingTarget) {
+          throw new HttpError(409, `A file or folder already exists at ${targetPath.slice(DOCS_PATH.length + 1)}.`);
+        }
         remappedEntries.push({
           path: targetPath,
           mode: entry.mode,
